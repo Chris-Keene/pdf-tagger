@@ -1,0 +1,206 @@
+"""Optional help from Claude: draft image descriptions, sanity-check reading order.
+
+Off unless the user turns it on, and it never decides anything on its own. Every
+draft comes back marked as a draft and still counts as outstanding until a person
+has looked at it, because the one thing this app has always refused to do is
+produce a description that looks finished and says nothing. PDF/UA has no rule for
+whether alt text is useful, so an auto-accepted draft would sail through every
+check and help nobody.
+
+Two providers, picked at runtime:
+
+  * the Claude Code CLI, if the user has it. No key to paste and no second bill:
+    it runs on whatever account they already sign in to. This is the one most
+    people will get for free.
+  * the Anthropic SDK with an API key, for anyone without the CLI.
+
+Neither is a dependency of the app. If neither resolves, the feature simply is not
+offered and nothing else changes.
+"""
+
+import json
+import os
+import shutil
+import subprocess
+import tempfile
+
+# Reading order needs the words and where they sit, never the picture, so that half
+# of this sends no image data anywhere.
+ORDER_MODEL = "sonnet"
+ALT_MODEL = "sonnet"
+
+_CLI_TIMEOUT = 120
+
+
+class Unavailable(Exception):
+    """No usable route to Claude, with a line the user can act on."""
+
+
+def detect():
+    """Which route is available, without spending anything to find out."""
+    cli = shutil.which("claude")
+    if cli:
+        return {"route": "claude-code", "detail": cli,
+                "label": "Claude Code, signed in on this Mac"}
+    if os.environ.get("ANTHROPIC_API_KEY"):
+        return {"route": "api-key", "detail": "ANTHROPIC_API_KEY",
+                "label": "Anthropic API key from the environment"}
+    try:
+        import anthropic                                    # noqa: F401
+    except Exception:
+        return {"route": None, "detail": "",
+                "label": "Nothing available. Install Claude Code, or set an "
+                         "ANTHROPIC_API_KEY, to switch this on."}
+    return {"route": "api-key-missing", "detail": "",
+            "label": "The Anthropic library is here but no key is set."}
+
+
+def _run_cli(prompt, model, cwd):
+    """One non-interactive Claude Code call, returning its text."""
+    exe = shutil.which("claude")
+    if not exe:
+        raise Unavailable("Claude Code is not installed on this Mac.")
+    try:
+        proc = subprocess.run(
+            [exe, "-p", "--output-format", "json", "--model", model, prompt],
+            cwd=cwd, capture_output=True, text=True, timeout=_CLI_TIMEOUT,
+            stdin=subprocess.DEVNULL)
+    except subprocess.TimeoutExpired:
+        raise Unavailable("Claude Code did not answer in time.")
+    try:
+        payload = json.loads(proc.stdout or "{}")
+    except json.JSONDecodeError:
+        raise Unavailable("Claude Code returned something unreadable.")
+    if payload.get("is_error"):
+        msg = str(payload.get("result") or "").strip()
+        # The common one by far, and it has a one-line fix worth naming.
+        if "authenticate" in msg.lower() or "oauth" in msg.lower():
+            raise Unavailable("Your Claude Code sign-in has expired. Open a "
+                              "terminal, run `claude`, sign in, and try again.")
+        raise Unavailable(msg or "Claude Code reported an error.")
+    return str(payload.get("result") or "").strip()
+
+
+def _run_api(prompt, images=()):
+    """One Anthropic API call, with optional images."""
+    try:
+        import anthropic
+    except Exception:
+        raise Unavailable("The Anthropic library is not installed.")
+    content = []
+    for media_type, data in images:
+        content.append({"type": "image", "source": {
+            "type": "base64", "media_type": media_type, "data": data}})
+    content.append({"type": "text", "text": prompt})
+    try:
+        client = anthropic.Anthropic()
+        resp = client.messages.create(
+            model="claude-sonnet-5", max_tokens=1024,
+            messages=[{"role": "user", "content": content}])
+    except Exception as exc:                                # noqa: BLE001
+        raise Unavailable(f"The Anthropic API could not be reached: {exc}")
+    return "".join(b.text for b in resp.content if b.type == "text").strip()
+
+
+def _ask(prompt, model, images=(), files_dir=None):
+    route = detect()["route"]
+    if route == "claude-code":
+        return _run_cli(prompt, model, files_dir or tempfile.gettempdir())
+    if route == "api-key":
+        return _run_api(prompt, images)
+    raise Unavailable(detect()["label"])
+
+
+# --------------------------------------------------------------------------- #
+# 1. Draft image descriptions
+# --------------------------------------------------------------------------- #
+
+_ALT_RULES = (
+    "You are drafting alt text for one image taken from a PDF, for a screen "
+    "reader user.\n"
+    "Rules:\n"
+    "- Say what a reader would miss if the image were not there.\n"
+    "- One sentence, under 25 words, no trailing full stop needed.\n"
+    "- Never start with 'image of', 'picture of', 'graphic showing' or the like.\n"
+    "- If the image is a screenshot containing text, the words that matter must "
+    "be in the description.\n"
+    "- If it is a logo, name the organisation and nothing else.\n"
+    "- If it carries no meaning at all and is purely decorative, reply with "
+    "exactly DECORATIVE.\n"
+    "Reply with the description alone and no preamble."
+)
+
+
+def draft_alt(crop_path, context_text="", page_no=None):
+    """Draft one image description. Returns (text, decorative)."""
+    where = f" It appears on page {page_no}." if page_no else ""
+    ctx = f"\n\nText near it on the page, for context only:\n{context_text[:600]}" \
+        if context_text else ""
+    prompt = (f"{_ALT_RULES}\n\nThe image is the file {os.path.basename(crop_path)} "
+              f"in this directory. Read it first.{where}{ctx}")
+    route = detect()["route"]
+    if route == "claude-code":
+        out = _run_cli(prompt, ALT_MODEL, os.path.dirname(crop_path))
+    else:
+        import base64
+        with open(crop_path, "rb") as fh:
+            data = base64.standard_b64encode(fh.read()).decode("ascii")
+        out = _run_api(f"{_ALT_RULES}{where}{ctx}", [("image/png", data)])
+    # Take the last real line first, then strip the quoting: a reply that ignores
+    # the no-preamble rule usually puts the answer last, and often in quotes.
+    lines = [l.strip() for l in out.splitlines() if l.strip()]
+    out = (lines[-1] if lines else "").strip().strip('"\u201c\u201d').strip()
+    if out.upper().startswith("DECORATIVE"):
+        return "", True
+    return out, False
+
+
+# --------------------------------------------------------------------------- #
+# 2. Review the reading order
+# --------------------------------------------------------------------------- #
+
+_ORDER_RULES = (
+    "Below is the reading order a tool has proposed for one page of a PDF, as it "
+    "would be read aloud by a screen reader. Each line gives a position, the role, "
+    "the position on the page, and the text.\n\n"
+    "Find only places where the ORDER is wrong: something read before the thing "
+    "it belongs to, a column read across instead of down, a caption read before "
+    "its figure, a heading read after the text it introduces.\n\n"
+    "Do not comment on the roles, the wording, or anything else. If the order "
+    "reads sensibly, say so.\n\n"
+    "Reply as JSON only, no prose, in this shape:\n"
+    '{"ok": true}\n'
+    "or\n"
+    '{"ok": false, "problems": [{"position": 4, "why": "read before the heading '
+    'it sits under"}]}\n'
+)
+
+
+def review_order(items, page_no):
+    """Ask whether a page's reading order makes sense. Text and geometry only."""
+    lines = []
+    for e in items:
+        x0, y0 = int(e["bbox"][0]), int(e["bbox"][1])
+        text = (e.get("text") or "").replace("\n", " ")[:90]
+        lines.append(f'{e["order"] + 1}. [{e["role"]}] (x{x0},y{y0}) {text}')
+    prompt = f"{_ORDER_RULES}\nPage {page_no}:\n" + "\n".join(lines)
+    raw = _ask(prompt, ORDER_MODEL)
+    start, end = raw.find("{"), raw.rfind("}")
+    if start < 0 or end < 0:
+        raise Unavailable("The answer could not be read as a result.")
+    try:
+        data = json.loads(raw[start:end + 1])
+    except json.JSONDecodeError:
+        raise Unavailable("The answer could not be read as a result.")
+    if data.get("ok"):
+        return []
+    out = []
+    for p in data.get("problems", [])[:12]:
+        try:
+            pos = int(p.get("position", 0)) - 1
+        except (TypeError, ValueError):
+            continue
+        if 0 <= pos < len(items):
+            out.append({"id": items[pos]["id"], "position": pos + 1,
+                        "why": str(p.get("why", ""))[:200]})
+    return out

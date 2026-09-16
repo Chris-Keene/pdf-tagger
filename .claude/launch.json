@@ -1,0 +1,11 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "pdf-tagger",
+      "runtimeExecutable": "./.venv/bin/python",
+      "runtimeArgs": ["-c", "import sys; sys.path.insert(0,'.'); from app.server import serve; serve(port=8934, open_browser=False)"],
+      "port": 8934
+    }
+  ]
+}

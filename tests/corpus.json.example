@@ -1,0 +1,7 @@
+{
+  "DIR": "~/Downloads",
+  "DECK": "~/Downloads/a-real-slide-deck.pdf",
+  "MISTAGGED": "~/Downloads/a-google-docs-export-with-wrong-tags.pdf",
+  "SHADED_TABLE": "~/Downloads/a-doc-with-a-borderless-table.pdf",
+  "TAGGED": ["*-a11y.pdf"]
+}

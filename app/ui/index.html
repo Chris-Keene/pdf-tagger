@@ -1,0 +1,2240 @@
+<!doctype html>
+<html lang="en-GB">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>PDF Tagger</title>
+<style>
+:root{
+  /* chriskeene.me: deep sky blue (Capri) on white, Outfit throughout. Token names
+     and values are lifted from the site itself rather than re-derived, so the two
+     cannot drift, and the ratios it already verified still hold here.
+     --accent is the brand hue and is used for non-text only (focus rings, box
+     outlines, fills under dark text); --accent-ink is its text-safe variant. */
+  --paper:#FFFFFF; --card:#FFFFFF; --ink:#0B1F2A; --muted:#51687A;
+  --line:#CDE7F7; --accent:#00BFFF; --accent-ink:#006699; --accent-soft:#D6EEFB;
+  --heading:#0086C7; --focus:#0077B0; --on-accent:#04212E;
+  --anno:#C6106E; --anno-ink:#2A0016;
+
+  /* Names the rest of the stylesheet already uses, mapped onto the palette. */
+  /* --heading is the site's large-display blue and is only 4.01:1 on white, but
+     this app paints headings, step labels and button text at 10 to 13pt, so the
+     text-safe variant is the one that maps across. --heading stays defined for
+     anything genuinely large. */
+  --navy:var(--accent-ink); --navy-lift:#00517A;
+  --pink:var(--anno); --pink-ink:var(--anno); --pink-ink-hover:#9B0D57;
+  --text:var(--ink); --bg:#F2F9FE; --white:var(--card); --link:var(--accent-ink);
+  /* Overlay tag labels are white on these fills, so each needs 4.5:1 on white. */
+  --blue:#0069A6; --purple:#6E4A96; --green:#1E7A45; --amber:#8A5A00; --teal:#0B6B66;
+  --control:#51687A; --radius:10px;
+  --font:'Outfit',ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+}
+/* Light only, deliberately. The site has a dark mode and it would be nice to
+   match, but this stylesheet carries 37 hardcoded colours from before the rebrand
+   and a dark window turned up over a hundred contrast failures: page numbers at
+   1.26:1, severity badges at 2.2:1, whole paragraphs at 1.07:1. Every one needs a
+   light/dark pair to fix properly. Half a dark mode in a tool about accessibility
+   is worse than none, so the window is pinned light until that work is done.
+   color-scheme keeps the browser from inventing its own dark treatment. */
+:root{color-scheme:light}
+*{box-sizing:border-box}
+html,body{margin:0;height:100%}
+body{font-family:var(--font);color:var(--text);background:var(--bg);line-height:1.5;font-size:15px}
+:focus-visible{outline:3px solid var(--focus);outline-offset:2px}
+h1,h2,h3,h4{color:var(--navy);font-weight:700;line-height:1.2;margin:0 0 .4em}
+h1{font-size:1.35rem}h2{font-size:1.15rem}h3{font-size:1rem}
+p{margin:0 0 .75em}
+a{color:var(--link)}
+.sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
+
+/* ---------- shell ---------- */
+.app{display:flex;flex-direction:column;height:100%}
+/* The site leads with a white ground and a signature accent strip rather than a
+   solid colour bar, so the shell follows that: strip, then ink on paper. */
+header.bar{background:var(--card);color:var(--ink);padding:.6rem 1.1rem;display:flex;
+  align-items:center;gap:1rem;flex-wrap:wrap;border-bottom:1px solid var(--line);
+  box-shadow:inset 0 4px 0 0 var(--accent)}
+header.bar h1{color:var(--ink);margin:0;font-size:1.05rem;letter-spacing:-.01em}
+header.bar .lockup{display:flex;align-items:center;gap:.65rem;min-width:0}
+header.bar .logo{height:26px;width:26px;display:block;flex:none;border-radius:6px}
+header.bar .sep{width:1px;height:20px;background:var(--line);flex:none}
+.filename{color:var(--muted);font-size:.85rem;margin-left:auto;max-width:40ch;
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+header.bar .quit{font:inherit;font-size:.82rem;font-weight:600;color:var(--accent-ink);
+  background:none;border:1px solid var(--line);border-radius:6px;padding:.15rem .6rem;
+  cursor:pointer}
+header.bar .quit:hover{background:var(--accent-soft)}
+.bye{max-width:34rem;margin:3rem auto;text-align:center;background:var(--white);
+  border:1px solid var(--line);border-radius:var(--radius);padding:2rem}
+
+nav.steps{background:var(--white);border-bottom:1px solid var(--line);padding:0 .6rem}
+nav.steps ol{display:flex;list-style:none;margin:0;padding:0;gap:.15rem;overflow-x:auto}
+nav.steps button{appearance:none;background:none;border:none;border-bottom:3px solid transparent;
+  font:inherit;color:var(--muted);padding:.7rem .85rem;cursor:pointer;display:flex;
+  align-items:center;gap:.45rem;white-space:nowrap}
+nav.steps button:hover{color:var(--navy)}
+nav.steps button[aria-current="step"]{color:var(--navy);font-weight:600;border-bottom-color:var(--pink)}
+nav.steps button:disabled{opacity:.4;cursor:default}
+nav.steps .n{background:var(--bg);border-radius:50%;width:1.5em;height:1.5em;display:grid;
+  place-items:center;font-size:.8rem;font-weight:600}
+nav.steps button[aria-current="step"] .n{background:var(--navy);color:var(--white)}
+nav.steps .tick{color:var(--green);font-weight:700}
+
+main{flex:1;overflow-y:auto;overflow-x:hidden;padding:1.1rem}
+.wrap{max-width:1220px;margin:0 auto;min-width:0}
+/* The structure step is a working canvas, not prose: the reading-width cap that
+   suits the other steps is what was keeping the page preview small. */
+.wrap.wide{max-width:1760px}
+.intro{background:var(--white);border:1px solid var(--line);border-radius:var(--radius);
+  padding:1rem 1.1rem;margin-bottom:1rem}
+.intro p:last-child{margin-bottom:0}
+.intro .why{color:var(--muted);font-size:.92rem}
+
+footer.bar{background:var(--white);border-top:1px solid var(--line);padding:.7rem 1.1rem;
+  display:flex;gap:.6rem;align-items:center;flex-wrap:wrap}
+footer.bar .spacer{flex:1}
+
+/* ---------- controls ---------- */
+button.btn{font:inherit;font-weight:600;border-radius:8px;padding:.5rem .95rem;cursor:pointer;
+  border:1px solid transparent;background:var(--navy);color:var(--white)}
+button.btn:hover{background:#16294a}
+button.btn.ghost{background:var(--white);color:var(--navy);border-color:var(--navy)}
+button.btn.ghost:hover{background:var(--bg)}
+button.btn.pink{background:var(--pink-ink);color:var(--white)}
+button.btn.pink:hover{background:var(--pink-ink-hover)}
+button.btn:disabled{opacity:.45;cursor:default}
+/* ---------- small controls ----------
+   One treatment was doing six different jobs: page navigation, view toggles, zoom,
+   help, reordering, and the commit action all looked identical, 66 of them on a
+   single screen. Each kind now looks like what it does. Every variant keeps the
+   24px minimum target size from WCAG 2.2 (2.5.8). */
+button.mini{font:inherit;font-size:.82rem;padding:.35rem .6rem;min-height:1.6rem;
+  border:1px solid var(--control);background:var(--white);border-radius:6px;
+  cursor:pointer;color:var(--navy)}
+button.mini:hover{border-color:var(--navy);background:var(--bg)}
+button.mini:disabled{opacity:.42;cursor:default}
+
+/* Commit: resolves a piece of work. The most prominent small control, in the same
+   green as the "checked" badge it produces, so cause and effect match. */
+button.mini.commit{background:var(--green);border-color:var(--green);color:#fff;
+  font-weight:600;padding:.35rem .75rem}
+button.mini.commit:hover{background:#155F36}
+button.mini.commit::before{content:"\2713";margin-right:.35em;font-weight:700}
+
+/* Toggle: reads as on or off. Deliberately NOT the navy fill it used to have,
+   which was identical to the primary action button in the footer. */
+button.mini.toggle{padding-left:.45rem;display:inline-flex;align-items:center;gap:.4rem}
+button.mini.toggle::before{content:"";width:.62rem;height:.62rem;border-radius:50%;
+  border:1.5px solid var(--control);flex:none}
+button.mini.toggle[aria-pressed="true"]{background:#EAF1FC;border-color:var(--blue);
+  color:#0F4C9C;font-weight:600}
+button.mini.toggle[aria-pressed="true"]::before{background:var(--blue);
+  border-color:var(--blue);box-shadow:inset 0 0 0 2px #fff}
+
+/* Segmented group: related view controls read as one cluster, not loose pills. */
+.seg{display:inline-flex;align-items:stretch;border:1px solid var(--control);
+  border-radius:7px;overflow:hidden;background:var(--white)}
+.seg>button.mini{border:none;border-radius:0;border-right:1px solid var(--line);
+  min-height:1.75rem}
+.seg>button.mini:last-child{border-right:none}
+.seg>.pct{display:inline-flex;align-items:center;padding:0 .5rem;
+  border-right:1px solid var(--line);background:var(--bg)}
+
+/* Stepper: two per row and dozens per page, so the quietest thing on the screen. */
+/* Quiet comes from size and ink, NOT from a faint border: --line is a decorative
+   rule colour at 1.44:1, and a control boundary needs 3:1 (WCAG 2.2 1.4.11). */
+button.mini.step{padding:.3rem .45rem;min-width:1.75rem;min-height:1.75rem;
+  color:var(--muted);border-color:var(--control);font-size:.9rem;line-height:1}
+button.mini.step:hover{color:var(--navy);border-color:var(--navy)}
+
+/* Info: explains rather than does. Tinted and dashed so it never reads as an action. */
+/* #6E8CBE rather than a softer blue-grey: 3.41:1 on white and 3.18:1 on its own
+   tint, so the dashed boundary is actually identifiable. */
+button.mini.info{background:#F4F7FC;border-style:dashed;border-color:#6E8CBE;
+  color:#14539A;font-weight:600}
+button.mini.info:hover{background:#E9F0FA;border-color:var(--blue)}
+
+/* Jump: takes you somewhere. Link-like, with the direction on the mark. */
+button.mini.jump{border:none;background:none;color:var(--link);font-weight:600;
+  text-decoration:underline;text-underline-offset:2px;padding:.35rem .25rem}
+button.mini.jump:hover{color:#0E4FA8}
+button.mini.jump::after{content:"\00A0\2192"}
+label{font-weight:600;display:block;margin-bottom:.25rem}
+input[type=text],select,textarea{font:inherit;padding:.45rem .55rem;border:1px solid var(--control);
+  border-radius:7px;background:var(--white);color:var(--text);width:100%}
+textarea{resize:vertical}
+.field{margin-bottom:.9rem}
+.hint{color:var(--muted);font-size:.86rem;margin:.25rem 0 0}
+
+/* ---------- open screen ---------- */
+.drop{background:var(--white);border:2px dashed var(--control);border-radius:var(--radius);
+  padding:2.4rem 1.5rem;text-align:center}
+.drop.over{border-color:var(--pink);background:#FFF0F8}
+.drop h2{margin-top:0}
+
+/* ---------- structure screen ---------- */
+/* Every track is minmax(0,…): a bare `1fr` means minmax(auto,1fr), whose auto
+   minimum is min-content, so a wide child (the page rail) pushed the whole
+   column past the window and the panel overflowed sideways. */
+/* The page preview earns more room than the item list: it is where the user is
+   actually checking what got tagged, and small overlay boxes on a small render
+   are hard to judge. */
+.cols{display:grid;grid-template-columns:minmax(0,1.62fr) minmax(300px,1fr);gap:1rem;
+  align-items:start}
+@media (max-width:1100px){.cols{grid-template-columns:minmax(0,1fr)}}
+/* Stacked, the list no longer needs to be a tall scroller beside the page. */
+@media (max-width:1100px){.items{max-height:none}}
+.panel{background:var(--white);border:1px solid var(--line);border-radius:var(--radius);
+  padding:.9rem;min-width:0}
+.pagebar{display:flex;align-items:center;gap:.5rem;margin-bottom:.7rem;flex-wrap:wrap}
+.pagebar .who{color:var(--muted);font-size:.88rem}
+
+/* The boxes are positioned in percentages, so scaling the stage scales them with
+   it for free. Zooming is therefore just "make the stage wider than its viewport
+   and let the viewport scroll". */
+.stageview{background:#e9ecf1;border:1px solid var(--line);border-radius:8px;
+  overflow:auto;max-height:78vh;position:relative}
+.stageview[tabindex]{cursor:grab;user-select:none;-webkit-user-select:none}
+.stageview:focus-visible{outline:3px solid var(--pink);outline-offset:2px}
+.stage{position:relative;line-height:0;margin:0 auto}
+.stage img{width:100%;height:auto;display:block}
+.zoomrow{display:flex;align-items:center;gap:.35rem;margin:0 0 .5rem;flex-wrap:wrap}
+.zoomrow .pct{font-size:.8rem;font-weight:700;color:var(--muted);min-width:3.6em;
+  text-align:center;font-variant-numeric:tabular-nums}
+.zoomrow .hint2{color:var(--muted);font-size:.8rem}
+.stage .box{position:absolute;background:none;border:2.5px solid var(--blue);border-radius:3px;
+  padding:0;margin:0;cursor:pointer;line-height:1}
+.stage .box .tag{position:absolute;top:-2px;left:-2px;transform:translateY(-100%);
+  font:600 11px/1.35 var(--font);color:var(--white);background:var(--blue);
+  padding:0 .35em;border-radius:3px 3px 0 0;white-space:nowrap}
+.stage .box[data-kind=heading]{border-color:var(--navy)}
+.stage .box[data-kind=heading] .tag{background:var(--navy)}
+.stage .box[data-kind=list]{border-color:var(--purple)}
+.stage .box[data-kind=list] .tag{background:var(--purple)}
+.stage .box[data-kind=figure]{border-color:var(--pink)}
+.stage .box[data-kind=figure] .tag{background:var(--pink-ink)}
+.stage .box[data-kind=ignored]{border-style:dashed;border-color:#6B7280}
+.stage .box[data-kind=ignored] .tag{background:#6B7280}
+.stage .box[aria-pressed="true"]{border-width:4px;box-shadow:0 0 0 3px #FFF,0 0 0 6px var(--pink)}
+.stage.hide-ignored .box[data-kind=ignored]{display:none}
+/* Tables sit behind the item boxes: they frame a region rather than name one
+   thing, so they must not intercept clicks meant for the items inside them. */
+.stage .tbox{position:absolute;pointer-events:none;border:2.5px dashed var(--teal);
+  border-radius:3px;background:rgba(0,150,143,.06)}
+.stage .tbox .tag{position:absolute;top:-2px;right:-2px;transform:translateY(-100%);
+  font:600 11px/1.35 var(--font);color:var(--white);background:var(--teal);
+  padding:0 .35em;border-radius:3px 3px 0 0;white-space:nowrap}
+.stage .tbox.off{border-color:#6B7280;background:none;opacity:.65}
+.stage .tbox.off .tag{background:#6B7280}
+.stage .tbox.hl{border-width:4px;box-shadow:0 0 0 3px #FFF,0 0 0 6px var(--pink)}
+
+.tables{margin:.7rem 0 0;display:grid;gap:.5rem}
+.thead4{display:flex;align-items:center;gap:.35rem}
+.thead4 h4{margin:.2rem 0 0;font-size:.95rem}
+.tcard{border:1px solid var(--line);border-left:4px solid var(--teal);border-radius:8px;
+  padding:.6rem .7rem;background:var(--white)}
+.tcard.ask{border-left-color:var(--amber);background:#FFFCF3}
+.tcard.off{border-left-color:#6B7280;background:var(--bg)}
+.tcard .thead{display:flex;gap:.5rem;align-items:baseline;flex-wrap:wrap}
+.tcard .thead b{font-size:.95rem}
+.tcard .dims{color:var(--muted);font-size:.85rem}
+.tcard .note{margin:.3rem 0 .5rem;font-size:.85rem;color:var(--muted);line-height:1.45}
+.tcard .trow{display:flex;gap:.4rem;flex-wrap:wrap;align-items:center}
+
+.tip .lim{border-left:3px solid var(--muted);padding-left:.6rem;margin:.5rem 0 0;
+  font-size:.88rem;color:var(--muted)}
+.legend{display:flex;gap:.8rem;flex-wrap:wrap;margin:.6rem 0 0;font-size:.82rem;color:var(--muted)}
+.legend span{display:flex;align-items:center;gap:.3rem}
+.legend i{width:.85rem;height:.85rem;border:2.5px solid;border-radius:3px;display:inline-block}
+
+.items{list-style:none;margin:0;padding:0;max-height:60vh;overflow:auto}
+.items>li{border:1px solid var(--line);border-radius:8px;padding:.55rem .6rem;margin-bottom:.45rem}
+.items>li.sel{border-color:var(--pink);box-shadow:0 0 0 2px #FFE3F1}
+.items .row{display:flex;gap:.45rem;align-items:center}
+.items .ord{font-weight:700;color:var(--muted);font-size:.8rem;min-width:1.6em}
+.items .grip{color:var(--muted);font-size:1rem;line-height:1;letter-spacing:-.1em;
+  user-select:none;-webkit-user-select:none;touch-action:none;cursor:grab;
+  /* padded out to a 24px target: it is a drag handle, and the arrow buttons are
+     its single-tap equivalent, but there is no reason to make it fiddly. */
+  padding:.35rem .5rem;margin:-.35rem -.2rem;min-width:24px;text-align:center}
+.items>li.dragging{opacity:.45}
+.items>li.over-before{box-shadow:0 -3px 0 0 var(--pink)}
+.items>li.over-after{box-shadow:0 3px 0 0 var(--pink)}
+.mini.act{border-style:solid;font-weight:600}
+.items .txt{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
+  font-size:.9rem;text-align:left;font-family:inherit;background:none;border:none;
+  border-radius:5px;padding:.25rem .3rem;min-height:1.6rem;color:var(--text);cursor:pointer}
+.items .txt:hover{background:var(--bg)}
+.items .txt[aria-pressed="true"]{background:#FFE3F1;color:#7A0344;font-weight:600}
+.items select{width:auto;min-width:9.5em;font-size:.86rem;padding:.25rem .35rem}
+.items .note{color:var(--muted);font-size:.8rem;margin:.3rem 0 0}
+.items .lvl{color:var(--muted);font-size:.78rem}
+.badge{font-size:.72rem;font-weight:700;border-radius:999px;padding:.05em .5em;white-space:nowrap}
+.badge.low{background:#FFF3D6;color:var(--amber)}
+.badge.chg{background:#E6F0FF;color:#14539A}
+.badge.ok{background:#E4F4EA;color:#14572F}
+
+/* ---------- confidence ---------- */
+.items>li.check{border-color:#E8CE8F;background:#FFFDF7}
+.items>li.check.sel{border-color:var(--pink)}
+.conf{display:flex;align-items:center;gap:.4rem;margin:.35rem 0 0}
+.conf .bar{flex:1;height:6px;background:#E4E7EE;border-radius:3px;overflow:hidden;
+  max-width:120px}
+.conf .bar i{display:block;height:100%;background:var(--amber);border-radius:3px}
+.conf .bar.good i{background:var(--green)}
+.conf .num{font-size:.74rem;font-weight:700;color:var(--muted);
+  font-variant-numeric:tabular-nums}
+.reason{background:#FFF8E6;border-left:3px solid var(--amber);border-radius:0 6px 6px 0;
+  padding:.4rem .55rem;margin:.4rem 0 0;font-size:.84rem;color:#5A4200}
+.actions{display:flex;gap:.4rem;flex-wrap:wrap;margin-top:.4rem}
+
+/* the overlay marker: role colour stays on the border, so uncertainty gets its
+   own corner flag rather than competing with it */
+.stage .box .flag{position:absolute;right:-7px;top:-7px;width:16px;height:16px;
+  border-radius:50%;background:var(--amber);color:#fff;font:700 11px/16px var(--font);
+  text-align:center;box-shadow:0 0 0 2px #fff}
+.stage.only-check .box:not([data-check="1"]){opacity:.22}
+
+.confbar{display:flex;align-items:center;gap:.7rem;background:var(--white);
+  border:1px solid var(--line);border-radius:var(--radius);padding:.7rem .85rem;
+  margin-bottom:1rem;flex-wrap:wrap}
+.confbar .meter{flex:1;min-width:140px;height:10px;background:#E4E7EE;border-radius:5px;
+  overflow:hidden}
+.confbar .meter i{display:block;height:100%;background:var(--green)}
+.confbar strong{color:var(--navy)}
+.confbar .rest{color:var(--muted);font-size:.9rem}
+
+/* ---------- figures screen ---------- */
+.figs{list-style:none;margin:0;padding:0;display:grid;gap:.8rem}
+.figs>li{background:var(--white);border:1px solid var(--line);border-radius:var(--radius);
+  padding:.8rem;display:grid;grid-template-columns:200px 1fr;gap:.9rem;align-items:start}
+@media (max-width:700px){.figs>li{grid-template-columns:1fr}}
+.figs img{width:100%;height:auto;border:1px solid var(--line);border-radius:6px;background:#fff}
+.figs .meta{color:var(--muted);font-size:.83rem;margin:.3rem 0 0}
+
+/* ---------- issues ---------- */
+.issues{list-style:none;margin:0;padding:0}
+.issues>li{background:var(--white);border:1px solid var(--line);border-left-width:5px;
+  border-radius:8px;padding:.6rem .75rem;margin-bottom:.5rem}
+.issues>li[data-sev=blocker]{border-left-color:#C2185B}
+.issues>li[data-sev=warning]{border-left-color:var(--amber)}
+.issues>li[data-sev=suggestion]{border-left-color:var(--blue)}
+.issues .sev{font-size:.72rem;font-weight:700;text-transform:uppercase;letter-spacing:.05em}
+.issues[data-sev] .sev{color:var(--muted)}
+.issues>li[data-sev=blocker] .sev{color:#A5124B}
+.issues>li[data-sev=warning] .sev{color:var(--amber)}
+.issues>li[data-sev=suggestion] .sev{color:#14539A}
+.issues .fix{color:var(--muted);font-size:.88rem;margin:.2rem 0 0}
+.issues .go{margin-top:.35rem}
+
+/* ---------- stats + result ---------- */
+.stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:.6rem;margin-bottom:1rem}
+.stat{background:var(--white);border:1px solid var(--line);border-radius:var(--radius);padding:.7rem .8rem}
+.stat b{display:block;font-size:1.5rem;color:var(--navy);line-height:1.1}
+.stat span{color:var(--muted);font-size:.83rem}
+.result{border-radius:var(--radius);padding:1rem 1.1rem;margin-bottom:1rem;border:1px solid}
+.result.pass{background:#E9F7EF;border-color:#9AD5B2}
+.result.pass h2{color:#14572F}
+.result.fail{background:#FDECEF;border-color:#F0AEC0}
+.result.fail h2{color:#A5124B}
+.result ul{margin:.4rem 0 0 1.1rem;padding:0}
+.spin{display:inline-block;width:1em;height:1em;border:2px solid #ffffff80;
+  border-top-color:#fff;border-radius:50%;animation:s .7s linear infinite;vertical-align:-.15em}
+@keyframes s{to{transform:rotate(360deg)}}
+@media (prefers-reduced-motion:reduce){.spin{animation-duration:3s}}
+.err{background:#FDECEF;border:1px solid #F0AEC0;color:#8A0F3C;padding:.7rem .85rem;
+  border-radius:8px;margin-bottom:1rem}
+
+/* ---------- help system ---------- */
+header.bar .helptog{font:inherit;font-size:.82rem;font-weight:600;color:#fff;
+  background:none;border:1px solid #7C8CA8;border-radius:6px;padding:.15rem .6rem;
+  cursor:pointer;display:flex;align-items:center;gap:.35rem}
+header.bar .helptog:hover{background:#2B4B79}
+header.bar .helptog[aria-pressed="true"]{background:#2B4B79;border-color:#A9B8D0}
+header.bar .helptog .pip{width:.5rem;height:.5rem;border-radius:50%;background:#7C8CA8}
+header.bar .helptog[aria-pressed="true"] .pip{background:var(--pink)}
+
+/* A disclosure, not a hover tooltip: hover-only help is unreachable by keyboard
+   and on touch, and it vanishes the moment you try to read it. */
+/* 1.6rem = 25.6px: WCAG 2.2 AA (2.5.8) wants at least 24x24 CSS px, and the
+   21.6px version this started at was under it. */
+.q{font:inherit;font-size:.85rem;font-weight:700;line-height:1;width:1.6rem;
+  height:1.6rem;border-radius:50%;border:1px solid var(--control);background:var(--white);
+  color:var(--navy);cursor:pointer;flex:none;padding:0}
+.q:hover{background:var(--navy);color:var(--white);border-color:var(--navy)}
+.q[aria-expanded="true"]{background:var(--navy);color:var(--white);border-color:var(--navy)}
+/* Tokenised rather than literal: the text inside is inherited, so a hardcoded
+   light panel puts near-white on near-white the moment the window goes dark. That
+   is the only shape that actually breaks - a panel that hardcodes BOTH its
+   background and its ink stays readable either way, it just looks light. */
+.tip{background:var(--accent-soft);border:1px solid var(--line);
+  border-left:4px solid var(--accent);color:var(--ink);
+  border-radius:8px;padding:.6rem .75rem;margin:.45rem 0;font-size:.9rem}
+.tip p{margin:0 0 .4em}
+.tip p:last-child{margin:0}
+.tip strong{color:var(--navy)}
+.tip .eg{color:var(--muted);font-size:.86rem}
+.labelrow{display:flex;align-items:center;gap:.4rem;margin-bottom:.25rem}
+.labelrow label{margin:0}
+
+/* ---------- intro guide (step 0) ---------- */
+.guide{background:var(--white);border:1px solid var(--line);border-radius:var(--radius);
+  padding:1rem 1.1rem;margin-bottom:1rem}
+.guide>summary{font-weight:700;color:var(--navy);cursor:pointer;font-size:1.05rem;
+  list-style:none;display:flex;align-items:center;gap:.5rem}
+.guide>summary::-webkit-details-marker{display:none}
+.guide>summary::before{content:"▸";color:var(--pink);font-size:1.1em;line-height:1}
+.guide[open]>summary::before{content:"▾"}
+.guide>summary:focus-visible{outline:3px solid var(--pink);outline-offset:3px}
+.guidebody{padding-top:.8rem}
+.flow{list-style:none;margin:0 0 1rem;padding:0;display:grid;
+  grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:.6rem}
+.flow>li{background:var(--bg);border-radius:8px;padding:.7rem .8rem}
+.flow .num{display:inline-grid;place-items:center;width:1.5rem;height:1.5rem;
+  border-radius:50%;background:var(--navy);color:var(--white);font-size:.8rem;
+  font-weight:700;margin-bottom:.35rem}
+.flow h4{margin:0 0 .2em;font-size:.95rem}
+.flow p{margin:0;font-size:.85rem;color:var(--muted)}
+.terms{margin:0;padding:0}
+.terms dt{font-weight:700;color:var(--navy);margin-top:.7rem}
+.terms dd{margin:.15rem 0 0;color:var(--text);font-size:.92rem}
+.terms dd .eg{color:var(--muted)}
+
+/* ---------- page rail (step 2) ---------- */
+.pagehead{display:flex;align-items:baseline;gap:.6rem;flex-wrap:wrap;margin-bottom:.5rem}
+.pagehead h3{margin:0}
+.pagehead .of{color:var(--muted);font-size:.9rem}
+.railwrap{margin-bottom:.7rem}
+.rail{list-style:none;margin:0;padding:.25rem .1rem .5rem;display:flex;gap:.4rem;
+  overflow-x:auto;scrollbar-width:thin;max-width:100%}
+.rail>li{flex:none}
+/* #7E8798 is 3.62:1 on white: enough to identify the control, deliberately not as
+   heavy as --control so the pink current-page border still wins the comparison. */
+.rail button{padding:0;background:var(--white);border:2px solid #7E8798;
+  border-radius:7px;cursor:pointer;display:block;position:relative;width:76px}
+.rail button:hover{border-color:var(--navy)}
+/* Current page is marked by form as well as hue: a thicker border plus a halo, so
+   it does not rest on a colour difference alone against the new resting border. */
+.rail button[aria-current="true"]{border-color:var(--pink-ink);border-width:3px;
+  box-shadow:0 0 0 3px #FFE3F1}
+.rail img{width:100%;height:auto;display:block;border-radius:5px 5px 0 0;background:#e9ecf1}
+.rail .cap{font-size:.72rem;font-weight:700;color:var(--navy);padding:.15rem 0 .2rem;
+  display:flex;align-items:center;justify-content:center;gap:.25rem}
+.rail button[aria-current="true"] .cap{color:var(--pink-ink)}
+.rail .seen{color:var(--green);font-weight:700}
+.rail .todo{position:absolute;top:-6px;right:-6px;min-width:1.2rem;height:1.2rem;
+  border-radius:999px;background:var(--pink-ink);color:#fff;font-size:.7rem;
+  font-weight:700;display:grid;place-items:center;padding:0 .25rem}
+.railhint{color:var(--muted);font-size:.84rem;margin:0 0 .5rem}
+.unseen{background:#FFF8E6;border:1px solid #E8CE8F;border-left:4px solid var(--amber);
+  border-radius:8px;padding:.6rem .75rem;margin-bottom:1rem;font-size:.9rem}
+.unseen strong{color:#6B4600}
+</style>
+</head>
+<body>
+<div class="app">
+  <header class="bar">
+    <div class="lockup">
+      <img class="logo" alt="" width="26" height="26" src="data:image/png;base64,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">
+      <span class="sep" aria-hidden="true"></span>
+      <h1>PDF&nbsp;Tagger</h1>
+    </div>
+    <span class="filename" id="fname"></span>
+    <button class="helptog" type="button" id="helptog" aria-pressed="true">
+      <span class="pip" aria-hidden="true"></span><span id="helptoglabel">Help tips on</span>
+    </button>
+    <button class="quit" type="button" id="quit">Quit</button>
+  </header>
+
+  <nav class="steps" aria-label="Steps">
+    <ol id="steps"></ol>
+  </nav>
+
+  <main id="main" tabindex="-1">
+    <div class="wrap" id="view"></div>
+  </main>
+
+  <footer class="bar">
+    <div id="footnote" class="hint" style="margin:0"></div>
+    <div class="spacer"></div>
+    <button class="btn ghost" id="back">Back</button>
+    <button class="btn" id="next">Next</button>
+  </footer>
+</div>
+<div class="sr" role="status" aria-live="polite" id="live"></div>
+<script>
+"use strict";
+const S = {loaded:false, doc:null, summary:null, issues:[], roleGroups:[], step:0,
+           page:0, sel:null, selTable:null, zoom:1, focus:null, dragging:null, rail:0, railTo:null, itemScroll:0, itemTo:null, orderNotes:null, assist:{on:false,route:null,label:'',busy:false}, hideIgnored:true, onlyCheck:false, busy:false,
+           error:"", result:null,
+           exporting:false, help:true, visited:{}};
+
+/* localStorage throws outright when a page is loaded from a data: or file: URL,
+   and in private windows, so every access is guarded. */
+function store(k, v){ try{ localStorage.setItem("pdftagger."+k, JSON.stringify(v)); }catch(e){} }
+function recall(k, dflt){
+  try{ const v = localStorage.getItem("pdftagger."+k);
+       return v===null ? dflt : JSON.parse(v); }catch(e){ return dflt; }
+}
+
+/* ---------- help content ----------
+   Written for someone who has never thought about PDF accessibility. No clause
+   numbers, no jargon without an explanation, and an example wherever one helps. */
+const HELP = {
+  why: {label:"why this matters", body:()=>[
+    p("Someone who cannot see the screen reads a PDF with a screen reader, which reads it out loud. It can only read what the file actually says."),
+    p("An untagged PDF is just ink on a page. Nothing in it says “this is a heading”, “these are five bullet points”, or “read the left column before the right one”. So the reader gets everything in a jumble, cannot skip to the section they want, and hears nothing at all where the pictures are."),
+    p("Tagging adds that missing layer. It changes nothing you can see.")]},
+
+  title: {label:"the title", body:()=>[
+    p("The title is read out when the file opens, and it shows in the window instead of the filename."),
+    p("Without it, someone opening your file hears something like “A-B-S-A dash exec dash v4 dash final dot p-d-f”."),
+    p("Write it the way you would say it out loud.", "eg")]},
+
+  lang: {label:"the language", body:()=>[
+    p("This tells the screen reader which voice and pronunciation to use."),
+    p("Get it wrong and an English document read with a French voice is close to unintelligible. It is one setting that makes a big difference.")]},
+
+  roles: {label:"roles", body:()=>[
+    p("A role says what a piece of content <em>is</em>, so the screen reader can announce it properly.", "html"),
+    p("<strong>Heading</strong> lets people jump around instead of listening to everything. <strong>Paragraph</strong> is ordinary text. <strong>List item</strong> gets announced as “list, 5 items”, so the listener knows how much is coming. <strong>Image</strong> needs a description. <strong>Ignore</strong> means skip it entirely.", "html"),
+    p("We have guessed from the way the page looks. Fix anything obviously wrong and leave the rest.")]},
+
+  tables: {label:"tables", body:()=>[
+    p("A table only works for a screen reader if the file says it is one. Then each cell is read with its column heading attached, so “£4,200” becomes “Q2, £4,200” and the listener knows what the number refers to."),
+    p("Untagged, a table is read straight across as a run of loose numbers, which is close to useless."),
+    p("The catch is that plenty of things are laid out in a grid without being tables. Getting that wrong is worse than leaving it alone, because every cell is then announced against a heading that was never really there. So say which it is: <strong>It&rsquo;s a table</strong> if the columns mean something, <strong>Just layout</strong> if the grid is only there to position things.", "html"),
+    p("Tables are found by their ruling lines. One drawn without any lines will not be spotted here, and its text is tagged as ordinary paragraphs.", "note")]},
+
+  headings: {label:"headings", body:()=>[
+    p("Headings are the single most useful thing you can get right. Screen reader users navigate by pulling up a list of headings, much like you would skim a page with your eyes."),
+    p("On a slide deck, the slide title is usually the heading. A smaller bold label above a block of text is usually a smaller heading."),
+    p("Levels work like an outline: Heading 1 is the top, then 2 inside it, then 3. Do not jump from 1 straight to 3, because the listener is told a level was skipped and cannot tell what belongs to what.")]},
+
+  order: {label:"reading order", body:()=>[
+    p("The numbers are the order everything gets read out. It is not the order things look like they are on the page, it is the order the file lists them in, which on slides is often whatever order they happened to be drawn."),
+    p("We have put things in columns, top to bottom, which is right most of the time. Busy slides are where it goes wrong."),
+    p("This is the one thing no checker can catch for you. A file can pass every automated test and still read out backwards, so it is worth a glance on each page."),
+    p("To change it, drag an item by its handle (⠿) or use the ↑ and ↓ buttons. Both do the same thing, so use whichever suits.", "html")]},
+
+  grouping: {label:"splitting and joining", body:()=>[
+    p("Each item is one thing that gets read out as a unit. Getting that wrong is easy to miss, because the words are all still there, just clumped wrongly."),
+    p("<strong>Split</strong> breaks an item apart. Use it when two things that sit side by side have been counted as one, which happens with table cells and columns: an item reading “8 19” is really two numbers from two different columns, and read as one it says something that was never on the page.", "html"),
+    p("<strong>Join up</strong> does the opposite, folding an item onto the one before it, for when a single sentence has been chopped in half.", "html"),
+    p("Split works out the pieces from where the words actually sit, so it separates columns and leaves a wrapped sentence alone. If the item is inside a table, the pieces are put into the cells they were drawn in.", "note")]},
+
+  lists: {label:"lists", body:()=>[
+    p("A real list gets announced as “list, 4 items”, and the listener can skip the whole thing or step through it. Bullets left as plain text just read out as “black circle” over and over."),
+    p("“Nesting level” is how far indented an item is. Level 2 items sit inside the level 1 item above them, which is how sub-bullets keep their meaning.")]},
+
+  figures: {label:"images", body:()=>[
+    p("A screen reader cannot see a picture. Whatever the image tells the reader has to be written down, or that information is simply missing for them."),
+    p("If an image is pure decoration, mark it decorative and it gets skipped silently. That is the right answer for logos, background shapes and dividers, and it is better than describing them.")]},
+
+  alt: {label:"writing a description", body:()=>[
+    p("Write what someone would miss if the image were not there. Aim for a sentence."),
+    p("If it is a chart, give the point it makes, not the shape: “Absa scored 67 out of 100, the lowest of the seven banks compared”, not “bar chart”."),
+    p("If it is a screenshot of text, the words have to go in the description, because pixels of text are still just pixels."),
+    p("Skip “image of” at the start, because the reader is already told it is an image. And “image”, “chart”, “logo” or a filename on their own pass every automated checker while telling the reader nothing at all.", "eg")]},
+
+  decorative: {label:"decoration", body:()=>[
+    p("Marked decorative means the screen reader skips it completely and never mentions it."),
+    p("That is what you want for logos, background swooshes, rules and spacer shapes. Announcing “company logo” on all fourteen slides is worse than silence."),
+    p("Be careful the other way though: anything you ignore is <em>gone</em> for that reader. If it carries meaning, give it a role instead.", "html")]},
+
+  pages: {label:"working through the pages", body:()=>[
+    p("Every page needs its own look, because the structure is different on each one."),
+    p("Use the strip of pages above, or the Next page button at the bottom. A tick means you have looked at a page; a pink number means images on it still need a description.")]},
+
+  conformance: {label:"what the check proves", body:()=>[
+    p("On export we run the file through veraPDF, the free reference checker for the PDF/UA accessibility standard. It counts 106 machine-checkable rules."),
+    p("Passing all 106 is a floor, not a gold star. No checker can tell whether your description is any good, or whether the reading order makes sense. Those are the two things that most affect a real reader, and they are the two things only you can judge."),
+    p("So “it passes” is an honest answer to a narrow question. It is not the same as “this reads well”.")]},
+};
+
+function p(text, kind){
+  if(kind==="html") return el("p",{html:text});
+  if(kind==="eg") return el("p",{class:"eg",text:text});
+  if(kind==="note") return el("p",{class:"lim",text:text});
+  return el("p",{text:text});
+}
+
+let _tipSeq = 0;
+/* Returns [button, panel] for an inline help disclosure, or [] when help is off.
+   Toggling touches the DOM directly rather than re-rendering, so focus stays put. */
+function helpFor(topic){
+  if(!S.help || !HELP[topic]) return [];
+  const id = "tip"+(++_tipSeq);
+  const panel = el("div",{class:"tip",id:id,role:"note",hidden:true}, HELP[topic].body());
+  const btn = el("button",{class:"q",type:"button","aria-expanded":"false",
+    "aria-controls":id, "aria-label":"Explain "+HELP[topic].label, text:"?"});
+  btn.onclick = ()=>{
+    const opening = panel.hidden;
+    panel.hidden = !opening;
+    btn.setAttribute("aria-expanded", String(opening));
+    if(opening) say(HELP[topic].label+": "+panel.textContent.slice(0,120));
+  };
+  return [btn, panel];
+}
+
+/* An explainer block at the top of a step. The lead line always shows; the
+   teaching paragraphs only when help is on. */
+function intro(title, lead, extras, topic){
+  const box = el("div",{class:"intro"});
+  const head = el("div",{class:"labelrow"},[el("h2",{text:title,style:"margin:0"})]);
+  const pair = helpFor(topic);
+  if(pair[0]) head.appendChild(pair[0]);
+  box.appendChild(head);
+  box.appendChild(el("p",{text:lead,style:"margin-top:.4rem"}));
+  if(pair[1]) box.appendChild(pair[1]);
+  if(S.help) (extras||[]).forEach(t=> box.appendChild(el("p",{class:"why",text:t})));
+  return box;
+}
+
+const STEPS = [
+  {key:"open",   label:"Open"},
+  {key:"doc",    label:"Document"},
+  {key:"struct", label:"Structure"},
+  {key:"images", label:"Images"},
+  {key:"export", label:"Export"}
+];
+
+const $  = (s,r)=> (r||document).querySelector(s);
+const el = (t,a,kids)=>{const n=document.createElement(t);
+  for(const k in (a||{})){ const v=a[k];
+    if(k==="class") n.className=v;
+    else if(k==="text") n.textContent=v;
+    else if(k==="html") n.innerHTML=v;
+    else if(k.startsWith("on")) n.addEventListener(k.slice(2),v);
+    else if(v!==null&&v!==undefined&&v!==false) n.setAttribute(k,v);}
+  (kids||[]).forEach(c=>c&&n.appendChild(c));
+  return n;};
+
+function kindOf(role){
+  if(/^H[1-6]$/.test(role)) return "heading";
+  if(role==="LI"||role==="LI-ordered") return "list";
+  if(role==="Figure") return "figure";
+  if(role==="Artifact") return "ignored";
+  return "text";
+}
+const ROLE_LABEL = {H1:"Heading 1",H2:"Heading 2",H3:"Heading 3",H4:"Heading 4",
+  H5:"Heading 5",H6:"Heading 6",P:"Paragraph",Span:"Plain text",
+  BlockQuote:"Quote",Caption:"Caption",LI:"List item",
+  "LI-ordered":"Numbered item",Figure:"Image",Artifact:"Ignore (decoration)"};
+const label = r => ROLE_LABEL[r] || r;
+
+function say(msg){ $("#live").textContent = msg; }
+
+async function api(path, opts){
+  const r = await fetch(path, opts);
+  const t = await r.text();
+  let j = {}; try{ j = t ? JSON.parse(t) : {}; }catch(e){ throw new Error(t.slice(0,200)); }
+  if(!r.ok || j.error) throw new Error(j.error || ("Request failed: "+r.status));
+  return j;
+}
+let _assistChecked = false;
+function absorb(j, keepDoc){
+  // What is installed, not a call to Claude: costs nothing and sends nothing.
+  if(!_assistChecked){ _assistChecked = true; assistDetect(); }
+  if(j.cancelled) return false;
+  S.loaded = !!j.loaded;
+  if("native" in j) S.native = !!j.native;
+  if(j.roles) S.roleGroups = j.roles;
+  if(j.doc){
+    // On a save, keep the client's own model object.  Swapping in the server's
+    // copy orphaned every DOM handler that had closed over the old one, so a
+    // click straight after typing silently did nothing.
+    if(!keepDoc) S.doc = j.doc;
+    S.summary = j.summary; S.issues = j.issues||[]; S.filename = j.filename;
+  }
+  return true;
+}
+
+/* ---------- model helpers ---------- */
+const REVIEW_THRESHOLD = 70;
+/* Mirrors needs_review() on the server: text only, because images have their own
+   step where the question is the description rather than the role. */
+const needsReview = e => e.kind==="text" && e.role!=="Artifact" && !e.reviewed
+  && e.score < REVIEW_THRESHOLD && !!(e.text||"").trim();
+const confLabel = s => s>=80 ? "Confident" : (s>=55 ? "Fairly sure" : "Not sure");
+
+function toCheck(){
+  const out=[];
+  S.doc.pages.forEach(p=> p.elements.slice().sort((a,b)=>a.order-b.order)
+    .forEach(e=>{ if(needsReview(e)) out.push(e); }));
+  return out;
+}
+function markReviewed(e){ e.reviewed = true; }
+
+const pageOf = n => S.doc.pages[n];
+const real = e => !(e.kind==="text" && !(e.text||"").trim()
+                    && (e.bbox[2]-e.bbox[0])<1 && (e.bbox[3]-e.bbox[1])<1);
+const liveOn = n => pageOf(n).elements.filter(e=>e.role!=="Artifact"&&real(e))
+                      .sort((a,b)=>a.order-b.order);
+const allOn  = n => pageOf(n).elements.filter(real)
+                      .sort((a,b)=>(a.order-b.order)||(a.bbox[1]-b.bbox[1]));
+// Move the view's point of interest to an item. Called when something *outside*
+// the page picks an item, never when a box on the page is clicked: there the user
+// is already looking at it, and moving the view would fight the drag.
+function focusOn(e){
+  if(!e) return;
+  const pg = pageOf(e.page);
+  S.focus = {x:((e.bbox[0]+e.bbox[2])/2)/pg.width,
+             y:((e.bbox[1]+e.bbox[3])/2)/pg.height};
+}
+function findEl(id){
+  for(const p of S.doc.pages) for(const e of p.elements) if(e.id===id) return e;
+  return null;
+}
+function renumber(n){
+  const live = liveOn(n);
+  live.forEach((e,i)=> e.order=i);
+  pageOf(n).elements.filter(e=>e.role==="Artifact").forEach(e=> e.order=10000);
+}
+function canSplit(e){ return e && e.kind==="text" && (e.parts||[]).length > 1; }
+
+async function edit(action, id, msg){
+  try{
+    const j = await api("/api/edit",{method:"POST",
+      headers:{"Content-Type":"application/json"},
+      body:JSON.stringify({action, id, doc:S.doc})});
+    if(!j.ok){ say(j.message || "That change could not be made."); return; }
+    absorb(j);
+    S.sel = j.select || S.sel;
+    const e = findEl(S.sel);
+    if(e) focusOn(e);
+    render();
+    say(msg(e));
+  }catch(err){ S.error = err.message; render(); }
+}
+// Split and join live on the server: they redistribute operator ranges, and one
+// implementation in the tagger's own language is one that the tests can reach.
+function splitItem(id){
+  const before = (findEl(id)||{}).text || "";
+  edit("split", id, ()=> "Split apart. First piece: " +
+       ((findEl(S.sel)||{}).text || "empty").slice(0,60));
+}
+function mergeUp(id){
+  edit("join", id, e=> "Joined into one item: " + ((e&&e.text)||"empty").slice(0,70));
+}
+
+/* Drop an item at another item's position. Shared by drag-and-drop and used to
+   keep the arrow buttons and dragging on exactly the same code path. */
+function moveTo(id, targetId, after){
+  const e = findEl(id);
+  if(!e || id===targetId) return;
+  const live = liveOn(e.page);
+  const from = live.findIndex(x=> x.id===id);
+  let to = live.findIndex(x=> x.id===targetId);
+  if(from < 0 || to < 0) return;
+  if(after) to += 1;
+  if(to > from) to -= 1;
+  if(to === from) return;
+  const arr = live.slice();
+  arr.splice(to, 0, arr.splice(from, 1)[0]);
+  arr.forEach((x,i)=> x.order = i);
+  renumber(e.page);
+  markReviewed(e);
+  save(0); render();
+  setTimeout(()=>{ const b=document.querySelector('[data-mv="'+id+'--1"]'); if(b) b.focus(); },0);
+  say((e.text||"item").slice(0,40)+" moved to position "+(to+1)+" of "+arr.length);
+}
+
+/* Dragging is an addition, never the only way: the arrow buttons stay, so the
+   same reordering is available from the keyboard and from a single tap. WCAG 2.2
+   asks for exactly that (2.5.7), and a reorderable list is unusable without it.
+
+   Built on pointer events rather than HTML5 drag-and-drop. The app ships inside a
+   WKWebView, where native drag-and-drop is unreliable, and dataTransfer drags
+   cannot be driven by ordinary pointer input at all, so the behaviour could not
+   be tested. Pointer events are the same mechanism the page preview already pans
+   with, they cover touch, and they can be verified. */
+function rowUnder(y){
+  const rows = [...document.querySelectorAll('.items>li[data-item]')];
+  for(const n of rows){
+    const r = n.getBoundingClientRect();
+    if(y >= r.top && y <= r.bottom)
+      return {el:n, after:(y - r.top) > r.height / 2};
+  }
+  // Past the ends: dropping below the last visible row means the end of the list,
+  // which is what someone dragging downwards off the edge is aiming for.
+  if(rows.length){
+    const first = rows[0].getBoundingClientRect();
+    const last = rows[rows.length-1].getBoundingClientRect();
+    if(y < first.top) return {el:rows[0], after:false};
+    if(y > last.bottom) return {el:rows[rows.length-1], after:true};
+  }
+  return null;
+}
+function clearDropMarks(){
+  document.querySelectorAll(".items>li").forEach(n=>
+    n.classList.remove("over-before","over-after"));
+}
+/* Auto-scroll while dragging. The item list has its own scrollable box, and the
+   page behind it scrolls too, so a drag that reaches the edge has to keep the list
+   moving or you cannot reach a target that is off screen. Runs on a timer rather
+   than off pointermove, so it keeps going while the pointer is held still at the
+   edge. */
+const EDGE = 44, EDGE_RATE = 800;      // px per second at the edge
+let _edgeTimer = null;
+function edgeScroll(y){
+  stopEdgeScroll();
+  const box = document.querySelector(".items");
+  const near = (top, bottom) =>
+    y < top + EDGE ? -1 : (y > bottom - EDGE ? 1 : 0);
+  let dir = 0, target = null;
+  if(box){
+    const r = box.getBoundingClientRect();
+    if(y >= r.top - EDGE && y <= r.bottom + EDGE){
+      dir = near(r.top, r.bottom);
+      if(dir) target = box;
+    }
+  }
+  if(!dir){
+    dir = near(0, window.innerHeight);
+    if(dir) target = "window";
+  }
+  if(!dir || !target) return;
+  // Distance from elapsed time, not a fixed step per tick: timers are throttled
+  // in a window that is not painting, and a per-tick step then crawls.
+  let last = performance.now();
+  _edgeTimer = setInterval(()=>{
+    const now = performance.now();
+    const by = dir * EDGE_RATE * (now - last) / 1000;
+    last = now;
+    if(target === "window") window.scrollBy(0, by);
+    else target.scrollTop += by;
+  }, 16);
+}
+function stopEdgeScroll(){
+  if(_edgeTimer){ clearInterval(_edgeTimer); _edgeTimer = null; }
+}
+
+function attachDrag(li, grip, e){
+  if(!grip) return;
+  let dragging = false;
+  grip.addEventListener("pointerdown", ev=>{
+    if(ev.button !== 0) return;
+    dragging = true; S.dragging = e.id;
+    li.classList.add("dragging");
+    grip.style.cursor = "grabbing";
+    try{ grip.setPointerCapture(ev.pointerId); }catch(_){}
+    ev.preventDefault();
+  });
+  grip.addEventListener("pointermove", ev=>{
+    if(!dragging) return;
+    const t = rowUnder(ev.clientY);
+    clearDropMarks();
+    if(t && t.el !== li) t.el.classList.add(t.after ? "over-after" : "over-before");
+    edgeScroll(ev.clientY);
+    ev.preventDefault();
+  });
+  const finish = ev=>{
+    if(!dragging) return;
+    stopEdgeScroll();
+    dragging = false; S.dragging = null;
+    li.classList.remove("dragging");
+    grip.style.cursor = "grab";
+    const t = rowUnder(ev.clientY);
+    clearDropMarks();
+    try{ grip.releasePointerCapture(ev.pointerId); }catch(_){}
+    if(t && t.el !== li && t.el.dataset.item) moveTo(e.id, t.el.dataset.item, t.after);
+  };
+  grip.addEventListener("pointerup", finish);
+  grip.addEventListener("pointercancel", ()=>{
+    stopEdgeScroll();
+    dragging = false; S.dragging = null;
+    li.classList.remove("dragging"); grip.style.cursor = "grab"; clearDropMarks();
+  });
+}
+
+function move(id, dir){
+  const e = findEl(id); const live = liveOn(e.page);
+  const i = live.findIndex(x=>x.id===id); const j = i+dir;
+  if(j<0 || j>=live.length) return;
+  const a=live[i].order; live[i].order=live[j].order; live[j].order=a;
+  renumber(e.page);
+  save(); render();
+  setTimeout(()=>{ const b=document.querySelector('[data-mv="'+id+'-'+dir+'"]'); if(b) b.focus(); },0);
+  say(label(e.role)+" moved to position "+(live.findIndex(x=>x.id===id)+1));
+}
+
+let saveTimer=null, savePending=false;
+function save(delay){
+  clearTimeout(saveTimer); savePending=true;
+  saveTimer = setTimeout(async ()=>{
+    try{
+      const j = await api("/api/model",{method:"POST",
+        headers:{"Content-Type":"application/json"},
+        body:JSON.stringify({doc:S.doc})});
+      absorb(j, true); savePending=false;
+      // Never re-render the structure or images steps from a save: the user may
+      // be mid-edit and a re-render would take their focus away.
+      if(S.step===4||S.step===1) render(); else renderFoot();
+    }catch(err){ S.error=err.message; render(); }
+  }, delay===undefined?250:delay);
+}
+
+/* ---------- shell ---------- */
+function renderSteps(){
+  const ol = $("#steps"); ol.textContent="";
+  STEPS.forEach((st,i)=>{
+    const done = S.loaded && i<S.step && i>0;
+    const b = el("button",{type:"button", "aria-current": i===S.step?"step":null,
+      disabled: (!S.loaded && i>0) ? "disabled" : null,
+      // Named explicitly: the visible label lives in a child span, and the step
+      // number beside it is decorative, so an explicit name is unambiguous and
+      // adds the position in the sequence.
+      "aria-label":"Step "+(i+1)+" of "+STEPS.length+": "+st.label+(done?", done":""),
+      onclick:()=>go(i)},[
+      el("span",{class:"n","aria-hidden":"true",text:done?"✓":String(i+1)}),
+      el("span",{text:st.label})]);
+    ol.appendChild(el("li",{},[b]));
+  });
+}
+function go(i){
+  if(i>0 && !S.loaded) return;
+  S.step = Math.max(0, Math.min(STEPS.length-1, i));
+  S.result = S.step===4 ? S.result : null;
+  render();
+  $("#main").focus();
+}
+function renderFoot(){
+  const back=$("#back"), next=$("#next"), note=$("#footnote");
+  const np = S.doc ? S.doc.pages.length : 0;
+  // On the structure step the primary button walks the pages before it walks the
+  // steps.  Without that, a multi-page document quietly looks like a one-pager.
+  const paging = S.step===2 && np>1;
+
+  if(paging && S.page < np-1){
+    next.textContent = "Next page ("+(S.page+2)+" of "+np+")";
+    next.onclick = ()=>{ goToPage(S.page+1); $("#main").focus(); };
+  } else {
+    next.textContent = S.step<STEPS.length-1 ? "Next: "+STEPS[S.step+1].label : "Next";
+    next.onclick = ()=>go(S.step+1);
+  }
+  next.hidden = S.step===STEPS.length-1;
+  next.disabled = !S.loaded;
+
+  if(paging && S.page > 0){
+    back.textContent = "Previous page ("+S.page+" of "+np+")";
+    back.onclick = ()=>{ goToPage(S.page-1); $("#main").focus(); };
+    back.disabled = false;
+  } else {
+    back.textContent = S.step>0 ? "Back: "+STEPS[S.step-1].label : "Back";
+    back.onclick = ()=>go(S.step-1);
+    back.disabled = S.step===0;
+  }
+
+  const s=S.summary;
+  const left = paging ? (np-1-S.page)+" more page"+((np-1-S.page)===1?"":"s")+" to check · " : "";
+  note.textContent = !s ? "" : left +
+    ((s.blockers? s.blockers+" thing"+(s.blockers===1?"":"s")+" still needed"
+                : (s.warnings? s.warnings+" warning"+(s.warnings===1?"":"s")
+                             : "Nothing outstanding"))
+     + (s.to_check ? " · "+s.to_check+" to check" : "")
+     + " · " + s.figures_described + "/" + s.figures + " images described");
+}
+
+function render(){
+  // The page strip is rebuilt from scratch every render, so its scroll position
+  // has to be carried across or it snaps back to the first page every time you
+  // click anything. Read synchronously from the outgoing DOM rather than tracking
+  // a scroll event, which is frame-aligned and does not fire at all in a context
+  // that is not painting.
+  const outgoing = document.querySelector(".rail");
+  if(outgoing) S.rail = outgoing.scrollLeft;
+  const outItems = document.querySelector(".items");
+  if(outItems) S.itemScroll = outItems.scrollTop;
+  renderSteps(); renderFoot();
+  const wrap = $("#view");
+  if(wrap) wrap.classList.toggle("wide", S.step === 2);
+  $("#fname").textContent = S.filename || "";
+  const v = $("#view"); v.textContent="";
+  if(S.error){ v.appendChild(el("div",{class:"err",role:"alert"},[
+      el("strong",{text:"Something went wrong. "}), el("span",{text:S.error}),
+      el("p",{class:"hint",style:"margin:.35rem 0 0",text:"You can carry on; nothing has been written to your file."})]));
+  }
+  ({0:viewOpen,1:viewDoc,2:viewStruct,3:viewImages,4:viewExport}[S.step])(v);
+}
+
+/* ---------- step 0: open ---------- */
+const FLOW = [
+  ["Open", "Drop in the PDF you want to fix."],
+  ["Document", "Give it a title and a language."],
+  ["Structure", "Check what each thing is, and the order it gets read."],
+  ["Images", "Say what each picture shows, or mark it decoration."],
+  ["Export", "Save a new, tagged copy and see it checked."],
+];
+
+function viewOpen(v){
+  const head = el("div",{class:"intro"});
+  const hrow = el("div",{class:"labelrow"},[
+    el("h2",{text:"Make a PDF work with a screen reader",style:"margin:0"})]);
+  const why = helpFor("why");
+  if(why[0]) hrow.appendChild(why[0]);
+  head.appendChild(hrow);
+  head.appendChild(el("p",{style:"margin-top:.4rem",
+    text:"A PDF exported from Google Slides, Keynote or most “print to PDF” routes has no structure in it at all. The words are on the page, but nothing says which is a heading, which is a list, or what order to read them in."}));
+  if(why[1]) head.appendChild(why[1]);
+  head.appendChild(el("p",{class:"why",
+    text:"This app works out the likely structure, walks you through confirming it, writes real tags into the file and then checks the result. Your original file is never changed."}));
+  v.appendChild(head);
+
+  // The five steps, always visible: the quickest way to show someone what they
+  // are about to be asked to do.
+  const flow = el("ol",{class:"flow"});
+  FLOW.forEach(([t,d],i)=> flow.appendChild(el("li",{},[
+    el("span",{class:"num","aria-hidden":"true",text:String(i+1)}),
+    el("h4",{text:t}), el("p",{text:d})])));
+  v.appendChild(el("div",{class:"panel",style:"margin-bottom:1rem"},[
+    el("h3",{text:"What you will do"}), flow,
+    el("p",{class:"hint",style:"margin:0",
+      text:"It takes a couple of minutes for a short deck. Nothing is written until the last step."})]));
+
+  const drop = el("div",{class:"drop",id:"drop"},[
+    el("h2",{text:"Drop a PDF here"}),
+    el("p",{class:"hint",text:"or pick one from your Mac"}),
+    el("p",{},[el("button",{class:"btn pink",type:"button",id:"pick",
+      text:"Choose a PDF…"})]),
+    el("p",{class:"hint",id:"dropnote",text:""})
+  ]);
+  v.appendChild(drop);
+  const file = el("input",{type:"file",accept:"application/pdf,.pdf",class:"sr",id:"file"});
+  v.appendChild(file);
+
+  if(S.help) v.appendChild(primer());
+
+  const busy=(on,msg)=>{ $("#pick").disabled=on;
+    $("#dropnote").textContent = on ? (msg||"Reading the PDF…") : "";
+    if(on) say(msg||"Reading the PDF"); };
+
+  $("#pick").onclick = async ()=>{
+    busy(true,"Waiting for you to choose a file…");
+    try{
+      const j = await api("/api/pick",{method:"POST"});
+      if(j.cancelled){ busy(false); return; }
+      S.error=""; absorb(j); afterOpen();
+    }catch(err){ S.error=err.message; busy(false); render(); }
+  };
+  drop.addEventListener("click", e=>{ if(e.target===drop) file.click(); });
+  file.onchange = ()=> file.files[0] && upload(file.files[0], busy);
+  ["dragenter","dragover"].forEach(t=>drop.addEventListener(t,e=>{
+    e.preventDefault(); drop.classList.add("over"); }));
+  ["dragleave","drop"].forEach(t=>drop.addEventListener(t,e=>{
+    e.preventDefault(); drop.classList.remove("over"); }));
+  drop.addEventListener("drop", e=>{
+    const f = e.dataTransfer.files[0];
+    if(f) upload(f, busy);
+  });
+}
+
+const TERMS = [
+  ["Heading", "A title or a label. Screen reader users pull up a list of headings to skim a document, exactly like you would run your eye down a page. Getting these right helps more than anything else here.",
+   "On a slide, the slide title is almost always a heading."],
+  ["Reading order", "The order things get read out. It is not the order they appear on screen, it is the order they were written into the file, which on slides is often the order they happened to be drawn.",
+   "Two columns read wrongly are a very common problem, and no automated checker catches it."],
+  ["List", "Bullets or numbered points. Tagged as a list, they get announced as “list, 4 items” and can be skipped or stepped through. Left as plain text, the bullet characters just read out as “black circle”.", ""],
+  ["Image description", "A sentence saying what a picture shows, for someone who cannot see it. Also called alt text.",
+   "“Absa scored 67 of 100, lowest of the seven banks” beats “bar chart” every time."],
+  ["Decoration", "A logo, a background shape, a divider. Anything with no meaning should be marked decorative so it is skipped in silence, rather than described on every slide.", ""],
+  ["Title and language", "Read out when the file opens, and used to pick the right voice. Two small settings, both required.", ""],
+];
+
+function primer(){
+  const open = recall("primerOpen", true);
+  const d = el("details",{class:"guide"});
+  d.open = open;
+  d.addEventListener("toggle", ()=> store("primerOpen", d.open));
+  d.appendChild(el("summary",{text:"New to this? What makes a PDF accessible"}));
+  const body = el("div",{class:"guidebody"});
+  body.appendChild(el("p",{
+    text:"Six things do almost all the work. You will be asked about each of them."}));
+  const dl = el("dl",{class:"terms"});
+  TERMS.forEach(([t,d2,eg])=>{
+    dl.appendChild(el("dt",{text:t}));
+    const dd = el("dd",{text:d2});
+    if(eg) dd.appendChild(el("div",{class:"eg",text:eg}));
+    dl.appendChild(dd);
+  });
+  body.appendChild(dl);
+  body.appendChild(el("p",{class:"hint",style:"margin-top:.9rem",
+    text:"Once you know your way around, turn off Help tips in the top right and all of this gets out of your way."}));
+  d.appendChild(body);
+  return d;
+}
+
+async function upload(f, busy){
+  if(!/\.pdf$/i.test(f.name)){ S.error="That is not a PDF."; render(); return; }
+  busy(true,"Reading "+f.name+"…");
+  try{
+    const j = await api("/api/upload",{method:"POST",
+      headers:{"X-Filename":f.name,"Content-Type":"application/pdf"}, body:f});
+    S.error=""; absorb(j); afterOpen();
+  }catch(err){ S.error=err.message; busy(false); render(); }
+}
+function afterOpen(){
+  S.page=0; S.sel=null; S.result=null;
+  const s=S.summary;
+  say("Opened. "+s.pages+" pages, "+s.tagged+" items found.");
+  go(S.doc.was_tagged ? 1 : 1);
+}
+
+/* ---------- step 1: document ---------- */
+function field(id, labelText, control, hint, topic){
+  const row = el("div",{class:"labelrow"},[el("label",{for:id,text:labelText})]);
+  const pair = helpFor(topic);
+  if(pair[0]) row.appendChild(pair[0]);
+  const box = el("div",{class:"field"},[row, control]);
+  if(pair[1]) box.appendChild(pair[1]);
+  if(hint) box.appendChild(el("p",{class:"hint",id:id+"hint",text:hint}));
+  return box;
+}
+
+function viewDoc(v){
+  v.appendChild(intro("About the document",
+    "Two things belong to the file as a whole. Both are required, and both are read out.",
+    ["These are the quickest wins here: one line of typing each, and they are the first thing anyone using a screen reader hears."]));
+
+  const p = el("div",{class:"panel"});
+  const t = el("input",{type:"text",id:"title",value:S.doc.title||"",
+    "aria-describedby":"titlehint"});
+  t.oninput = ()=>{ S.doc.title=t.value; save(500); };
+  p.appendChild(field("title","Title", t,
+    "Announced when the file opens, and shown in the window instead of the filename. Use the document's real name, not “Presentation1”.",
+    "title"));
+
+  const langs=[["en-GB","English (UK)"],["en-US","English (US)"],["fr-FR","French"],
+    ["de-DE","German"],["es-ES","Spanish"],["it-IT","Italian"],["nl-NL","Dutch"],
+    ["pt-PT","Portuguese"],["sv-SE","Swedish"],["da-DK","Danish"],["nb-NO","Norwegian"],
+    ["pl-PL","Polish"],["ja-JP","Japanese"],["zh-CN","Chinese (Simplified)"]];
+  const sel = el("select",{id:"lang","aria-describedby":"langhint"},
+    langs.map(([c,n])=>el("option",{value:c,text:n+"  ["+c+"]",
+      selected:S.doc.lang===c?"selected":null})));
+  sel.onchange = ()=>{ S.doc.lang=sel.value; save(0); };
+  p.appendChild(field("lang","Language", sel,
+    "Picks the voice and pronunciation rules a screen reader uses. Getting this wrong makes the document sound like nonsense.",
+    "lang"));
+  v.appendChild(p);
+
+  const s=S.summary;
+  v.appendChild(el("div",{class:"stats",style:"margin-top:1rem"},[
+    stat(s.pages,"pages"), stat(s.tagged,"items found"),
+    stat(s.headings,"headings"), stat(s.figures,"images"),
+    stat(s.to_check,"to check")]));
+  const cs = confSummary(false);
+  if(cs){ cs.style.marginTop=".2rem"; v.appendChild(cs); }
+  if(S.doc.adopted_flat && S.doc.adopted_reason === "wrong"){
+    v.appendChild(el("div",{class:"intro"},[
+      el("p",{style:"margin:0",html:"<strong>This PDF is already tagged, but the "+
+        "tags do not match the page.</strong> They have been set aside and the "+
+        "structure worked out afresh. Its tables and images were sound and have "+
+        "been kept. Everything on the next step is a new proposal."})]));
+  }
+  else if(S.doc.adopted_flat){
+    // "Already tagged" reads as "already fine", so this case says plainly
+    // what was missing and that the headings on the next step are proposals.
+    v.appendChild(el("div",{class:"intro"},[
+      el("p",{style:"margin:0",html:"<strong>This PDF is already tagged, but it "+
+        "has no headings.</strong> Every paragraph in it is just a paragraph, "+
+        "which some producers do \u2014 Google Docs among them. Its tables and "+
+        "images have been kept; the headings on the next step are proposed, so "+
+        "they are worth a look."})]));
+  }
+  else if(S.doc.adopted){
+    const ours = S.doc.adopted_ours;
+    v.appendChild(el("div",{class:"intro",style:"margin-top:1rem"},[
+      el("p",{style:"margin:0 0 .3rem",html: ours
+        ? "<strong>Picking up where you left off.</strong>"
+        : "<strong>This PDF already had tags from another tool.</strong>"}),
+      el("p",{style:"margin:0",text: ours
+        ? S.doc.adopted+" roles were read back out of the file, so everything you "+
+          "decided last time is still set and still marked as checked."
+        : S.doc.adopted+" roles have been kept rather than guessed at again, because "+
+          "whoever made the file knew more about it than font sizes can tell us. "+
+          "Nobody has checked them though, so change anything that looks wrong."})]));
+  }
+
+  if(S.doc.was_encrypted){
+    v.appendChild(el("div",{class:"unseen",role:"note",style:"margin-top:1rem"},[
+      el("p",{style:"margin:0 0 .35rem",html:"<strong>This PDF is protected, and the tagged copy will not be.</strong>"}),
+      el("p",{style:"margin:0",
+        text:"Tagging has to rewrite the file, and it comes out unprotected. The content "+
+             "is identical. If the password or the restrictions matter, re-apply them to "+
+             "the copy before sending it on."})]));
+  }
+
+  // Text this app cannot reach is the most important thing to say up front,
+  // because the honest outcome is a file that will not be conformant however
+  // much work the user puts in on the later steps.
+  if(S.doc.nested_text_pages){
+    const np2 = S.doc.nested_text_pages, um = S.doc.unmappable||0;
+    v.appendChild(el("div",{class:"unseen",role:"note",style:"margin-top:1rem"},[
+      el("p",{style:"margin:0 0 .35rem",html:"<strong>Some of the text in this PDF cannot be tagged by this app.</strong>"}),
+      el("p",{style:"margin:0 0 .35rem",
+        text:"On "+np2+" page"+(np2>1?"s":"")+", the text is stored inside a nested object"+
+             (um?" ("+um+" items affected)":"")+". This app works at the page level, so it cannot reach it."}),
+      el("p",{style:"margin:0",
+        text:"You can carry on, and everything reachable still gets tagged. What it will not do "+
+             "is pretend: the affected text is left alone rather than quietly marked as decoration, "+
+             "so the check at the end will fail and tell you so. The real fix is to re-export the "+
+             "document from wherever it was made."}),
+      S.help ? el("p",{class:"hint",style:"margin:.4rem 0 0",
+        text:"Decks exported from Google Slides, Keynote and PowerPoint are not usually affected. This tends to come from form-filling and report-generating tools."}) : null]));
+  }
+
+  // Unembedded fonts are worth saying early: it is the one problem here that
+  // tagging cannot touch, so the user should know before spending time on it.
+  const nf = (S.doc.unembedded_fonts||[]);
+  if(nf.length){
+    const names = nf.slice(0,3).join(", ") + (nf.length>3 ? " and "+(nf.length-3)+" more" : "");
+    v.appendChild(el("div",{class:"unseen",role:"note",style:"margin-top:1rem"},[
+      el("p",{style:"margin:0 0 .35rem",html:"<strong>"+
+        (nf.length>1?"Some fonts are":"A font is")+" not stored inside this PDF ("+names+").</strong>"}),
+      el("p",{style:"margin:0",
+        text:"This is the one thing here that tagging cannot fix. The glyphs a reader needs are "+
+             "missing from the file, so it will fail a conformance check however well it is "+
+             "tagged, and it may look different on another machine. It has to be fixed where "+
+             "the document was made, by embedding the fonts on export."}),
+      S.help ? el("p",{class:"hint",style:"margin:.4rem 0 0",
+        text:"You can carry on and tag it anyway. Everything else will still be improved."}) : null]));
+  }
+
+  if(s.pages>1) v.appendChild(el("div",{class:"intro",style:"margin-top:1rem"},[
+    el("p",{style:"margin:0",html:"<strong>This document has "+s.pages+
+      " pages.</strong> The next step goes through them one at a time, and each one needs its own look."})]));
+  // Only worth saying when the existing structure could NOT be read back. If it
+  // was adopted, "carrying on replaces it" is the opposite of what happens.
+  if(S.doc.was_tagged && !S.doc.adopted) v.appendChild(el("div",{class:"intro"},[
+    el("p",{style:"margin:0",html:"<strong>This PDF already has some structure, but it could not be read back.</strong> Carrying on replaces it with the structure you confirm here."})]));
+  const ap = assistPanel();
+  if(ap) v.appendChild(ap);
+}
+const stat=(n,l)=> el("div",{class:"stat"},[el("b",{text:String(n)}),el("span",{text:l})]);
+
+/* ---------- step 2: structure ---------- */
+/* How many images on this page still have no description. Surfaced on the page
+   rail so an unreviewed page announces itself instead of hiding. */
+function todoOn(n){
+  return pageOf(n).elements.filter(e=> e.role==="Figure" && !(e.alt||"").trim()).length;
+}
+function checkOn(n){
+  return pageOf(n).elements.filter(needsReview).length;
+}
+function markVisited(n){
+  if(!S.visited[n]){ S.visited[n] = true; }
+}
+function unseenPages(){
+  if(!S.doc) return [];
+  return S.doc.pages.map(p=>p.number).filter(n=> !S.visited[n]);
+}
+
+function confSummary(withButton){
+  const s = S.summary;
+  if(!s || !s.text_items) return null;
+  const done = s.text_items - s.to_check;
+  const pct = Math.round(done / s.text_items * 100);
+  const box = el("div",{class:"confbar"});
+  box.appendChild(el("div",{class:"meter",role:"img",
+    "aria-label":done+" of "+s.text_items+" text items either confidently tagged or checked by you"},
+    [el("i",{style:"width:"+pct+"%"})]));
+  box.appendChild(el("div",{},[
+    el("div",{},[el("strong",{text:done+" of "+s.text_items+" settled"}),
+      el("span",{class:"rest",text: s.to_check
+        ? "  ·  "+s.to_check+(s.to_check===1?" item":" items")+" the app is unsure about"
+        : "  ·  nothing left to check"})]),
+    S.help ? el("div",{class:"rest",
+      text: s.to_check
+        ? "These are the ones where the layout did not make the answer obvious. Confirm or change each, and it stops asking."
+        : "Every proposal was either clear-cut or confirmed by you."}) : null]));
+  if(withButton && s.to_check){
+    box.appendChild(el("button",{class:"btn ghost",type:"button",
+      text:"Go to the next one",
+      onclick:()=>{
+        const list = toCheck();
+        // Continue from where we are rather than restarting at page 1.
+        const next = list.find(e=> e.page > S.page)
+          || list.find(e=> e.page === S.page && (S.sel ? e.id !== S.sel : true))
+          || list[0];
+        if(!next) return;
+        S.page = next.page; S.sel = next.id; focusOn(next);
+        S.itemTo = next.id;
+        markVisited(S.page); render();
+        const row = document.querySelector('[data-item="'+next.id+'"]');
+        if(row){ row.scrollIntoView({block:"center"});
+          const btn = row.querySelector("select"); if(btn) btn.focus(); }
+        say("Page "+(next.page+1)+", "+label(next.role)+": "+
+            (next.text||"").slice(0,60)+". "+next.note);
+      }}));
+  }
+  return box;
+}
+
+function viewStruct(v){
+  const np = S.doc.pages.length;
+  v.appendChild(intro(
+    "Confirm the structure and the reading order",
+    np>1 ? "This document has "+np+" pages, and each one needs its own look."
+         : "Check what each piece of content is, and the order it gets read in.",
+    ["Each box is one piece of content. The number is the order it will be read in, which matters most on slides, where things are rarely read in the order they were drawn.",
+     "Change anything that looks wrong. Headings let people skim, lists get announced as lists, and anything set to Ignore is skipped entirely."],
+    "order"));
+  const cs = confSummary(true);
+  if(cs) v.appendChild(cs);
+  const cols = el("div",{class:"cols"});
+  cols.appendChild(stagePanel());
+  cols.appendChild(itemsPanel());
+  v.appendChild(cols);
+}
+
+function goToPage(n, focusRail){
+  const np = S.doc.pages.length;
+  S.page = Math.max(0, Math.min(np-1, n));
+  S.sel = null;
+  markVisited(S.page);
+  S.railTo = S.page;               // changing page may need the strip to move
+  render();
+  say("Page "+(S.page+1)+" of "+np+". "+
+      liveOn(S.page).length+" items. "+
+      (todoOn(S.page) ? todoOn(S.page)+
+        (todoOn(S.page)===1?" image still needs":" images still need")+
+        " a description." : ""));
+  if(focusRail){
+    const b = document.querySelector('[data-page="'+S.page+'"]');
+    if(b){ b.focus(); b.scrollIntoView({block:"nearest",inline:"center"}); }
+  }
+}
+
+function pageRail(){
+  const np = S.doc.pages.length;
+  if(np < 2) return null;
+  const wrap = el("div",{class:"railwrap"});
+  if(S.help) wrap.appendChild(el("p",{class:"railhint",
+    text:"Every page needs a look. A tick means you have seen it; a pink number counts what is still open on that page — items to check, and images needing a description."}));
+  const ul = el("ul",{class:"rail"});
+  S.doc.pages.forEach(pg=>{
+    const n = pg.number;
+    const todo = todoOn(n), chk = checkOn(n), open = todo + chk;
+    const seen = !!S.visited[n];
+    const bits = [];
+    if(chk) bits.push(chk+(chk===1?" item":" items")+" to check");
+    if(todo) bits.push(todo+(todo===1?" image needs":" images need")+" a description");
+    const b = el("button",{type:"button","data-page":String(n),
+      "aria-current": n===S.page ? "true" : null,
+      "aria-label":"Page "+(n+1)+" of "+np+
+        (seen?", seen":", not looked at yet")+
+        (bits.length ? ", "+bits.join(", ") : ""),
+      onclick:()=> goToPage(n)},[
+      el("img",{src:"/api/page?n="+n+"&w=150",loading:"lazy",alt:""}),
+      el("span",{class:"cap","aria-hidden":"true"},[
+        seen ? el("span",{class:"seen",text:"✓"}) : null,
+        el("span",{text:String(n+1)})]),
+      open ? el("span",{class:"todo","aria-hidden":"true",text:String(open)}) : null]);
+    ul.appendChild(el("li",{},[b]));
+  });
+  // Left and right arrows walk the rail, which is what a horizontal strip of
+  // page buttons behaves like everywhere else.
+  ul.addEventListener("keydown", e=>{
+    if(e.key!=="ArrowLeft" && e.key!=="ArrowRight") return;
+    e.preventDefault();
+    goToPage(S.page + (e.key==="ArrowRight" ? 1 : -1), true);
+  });
+  wrap.appendChild(ul);
+  // Put it back where it was. A timeout, not rAF: the strip has no scrollable
+  // width until its thumbnails have laid out, and a scroll assignment before then
+  // is clamped to zero.
+  setTimeout(()=>{
+    if(!ul.isConnected) return;
+    if(S.railTo !== null && S.railTo !== undefined){
+      const b = ul.querySelector('[data-page="'+S.railTo+'"]');
+      S.railTo = null;
+      if(b){ b.scrollIntoView({block:"nearest", inline:"nearest"}); S.rail = ul.scrollLeft; return; }
+    }
+    ul.scrollLeft = S.rail || 0;
+  }, 0);
+  return wrap;
+}
+
+function findTable(id){
+  for(const p of S.doc.pages) for(const t of (p.tables||[])) if(t.id===id) return t;
+  return null;
+}
+
+/* Tables get their own confirmation rather than riding along with the item list.
+   Whether a grid of text is a real table or just a layout is the one judgement
+   the app cannot make reliably, and getting it wrong is loud in a screen reader:
+   a layout grid announced as a table reads every cell against a made-up header. */
+function tablesPanel(pg){
+  const ts = pg.tables||[];
+  if(!ts.length) return null;
+  const box = el("div",{class:"tables",role:"group",
+    "aria-label":"Tables found on page "+(pg.number+1)});
+  // The help button is a sibling of the heading, never a child of it: a button
+  // inside a heading folds its own name into the heading's, so this would
+  // announce as "One table found on this page, what is a table".
+  const th = helpFor("tables");
+  const head = el("div",{class:"thead4"},[
+    el("h4",{text: ts.length===1 ? "One table found on this page"
+                                 : ts.length+" tables found on this page"})]);
+  if(th[0]) head.appendChild(th[0]);
+  box.appendChild(head);
+  if(th[1]) box.appendChild(th[1]);
+  ts.forEach(t=>{
+    const ask = !t.reviewed && t.score < 70;
+    const c = el("div",{class:"tcard"+(!t.accepted?" off":(ask?" ask":"")),
+      "data-table":t.id});
+    c.appendChild(el("div",{class:"thead"},[
+      el("b",{text: t.accepted ? "Table" : "Not a table"}),
+      el("span",{class:"dims",text:t.rows+" rows × "+t.cols+" columns"+
+        (t.reviewed ? " · you confirmed this" :
+          (ask ? " · worth a look" : " · looks clear"))})]));
+    if(t.note) c.appendChild(el("p",{class:"note",text:t.note}));
+    const row = el("div",{class:"trow"});
+    const seg = el("div",{class:"seg",role:"group","aria-label":"Is this a table?"});
+    seg.appendChild(el("button",{type:"button","data-act":"yes",
+      class:"mini"+(t.accepted?" commit":""), "aria-pressed":String(!!t.accepted),
+      text:"It's a table",
+      onclick:()=>setTable(t,{accepted:true},"yes")}));
+    seg.appendChild(el("button",{type:"button","data-act":"no",
+      class:"mini", "aria-pressed":String(!t.accepted),
+      text:"Just layout",
+      onclick:()=>setTable(t,{accepted:false},"no")}));
+    row.appendChild(seg);
+    if(t.accepted) row.appendChild(el("button",{type:"button",class:"mini toggle",
+      "data-act":"hdr", "aria-pressed":String(hasHeaderRow(t)),
+      text:"First row is headings",
+      onclick:()=>setHeaderRow(t, !hasHeaderRow(t))}));
+    row.appendChild(el("button",{type:"button",class:"mini jump",
+      text: S.selTable===t.id ? "Stop highlighting" : "Show me on the page",
+      onclick:()=>{ S.selTable = S.selTable===t.id?null:t.id; render(); }}));
+    c.appendChild(row);
+    box.appendChild(c);
+  });
+  return box;
+}
+function hasHeaderRow(t){
+  return (t.cells||[]).some(c=> c.row===0 && c.header);
+}
+function setHeaderRow(t, on){
+  (t.cells||[]).forEach(c=>{ if(c.row===0) c.header = on; });
+  setTable(t,{reviewed:true},"hdr");
+  say(on ? "First row will be read as column headings"
+         : "First row will be read as ordinary cells");
+}
+// Re-rendering throws away the button that was just pressed, so focus has to be
+// put back on its replacement by name. Without this a keyboard user is dumped at
+// the start of the card after every answer.
+function setTable(t, patch, act){
+  Object.assign(t, patch, {reviewed:true});
+  save(); render();
+  setTimeout(()=>{
+    const sel = '[data-table="'+t.id+'"] '+(act?'[data-act="'+act+'"]':'button');
+    const c = document.querySelector(sel) ||
+              document.querySelector('[data-table="'+t.id+'"] button');
+    if(c) c.focus(); },0);
+  if("accepted" in patch) say(patch.accepted
+    ? "Tagged as a table, "+t.rows+" rows by "+t.cols+" columns"
+    : "Tagged as ordinary text, not a table");
+}
+
+function stagePanel(){
+  const np = S.doc.pages.length;
+  markVisited(S.page);
+  const p = el("div",{class:"panel"});
+
+  const chk = checkOn(S.page);
+  const head = el("div",{class:"pagehead"},[
+    el("h3",{text: np>1 ? "Page "+(S.page+1)+" of "+np : "The page"}),
+    el("span",{class:"of",text: liveOn(S.page).length+" items"+
+      (chk ? " · "+chk+(chk===1?" to check":" to check") : "")+
+      (todoOn(S.page) ? " · "+todoOn(S.page)+
+        (todoOn(S.page)===1?" image needs":" images need")+" a description" : "")})]);
+  const ph = helpFor("pages");
+  if(ph[0]) head.appendChild(ph[0]);
+  p.appendChild(head);
+  if(ph[1]) p.appendChild(ph[1]);
+
+  const rail = pageRail();
+  if(rail) p.appendChild(rail);
+
+  const bar = el("div",{class:"pagebar"});
+  if(np>1){
+    const nav = el("div",{class:"seg",role:"group","aria-label":"Move between pages"});
+    nav.appendChild(el("button",{class:"mini",type:"button", text:"‹ Previous",
+      "aria-label": S.page>0 ? "Go to page "+S.page+" of "+np
+                             : "Previous page, unavailable on the first page",
+      disabled:S.page===0?"disabled":null, onclick:()=>goToPage(S.page-1)}));
+    nav.appendChild(el("button",{class:"mini",type:"button", text:"Next ›",
+      "aria-label": S.page<np-1 ? "Go to page "+(S.page+2)+" of "+np
+                                : "Next page, unavailable on the last page",
+      disabled:S.page>=np-1?"disabled":null, onclick:()=>goToPage(S.page+1)}));
+    bar.appendChild(nav);
+  }
+  bar.appendChild(el("button",{class:"mini toggle",type:"button",
+    text:S.hideIgnored?"Show ignored items":"Hide ignored items",
+    "aria-pressed":String(!S.hideIgnored),
+    onclick:()=>{S.hideIgnored=!S.hideIgnored;render();
+      say(S.hideIgnored?"Ignored items hidden":"Ignored items shown");}}));
+  if(chk || S.onlyCheck) bar.appendChild(el("button",{class:"mini toggle",type:"button",
+    text:S.onlyCheck?"Show everything":"Only items to check",
+    "aria-pressed":String(!!S.onlyCheck),
+    onclick:()=>{S.onlyCheck=!S.onlyCheck;render();
+      say(S.onlyCheck?"Showing only items to check":"Showing everything");}}));
+  p.appendChild(bar);
+
+  const pg = pageOf(S.page);
+  const view = el("div",{class:"stageview"+(S.zoom<=1?" fit":""),
+    tabindex: S.zoom > 1 ? "0" : null,
+    role: S.zoom > 1 ? "region" : null,
+    "aria-label": S.zoom > 1
+      ? "Page "+(S.page+1)+" preview, zoomed to "+Math.round(S.zoom*100)+
+        " percent. Scrollable: use the arrow keys to move around."
+      : null});
+  if(S.zoom > 1) attachPan(view);
+  const stage = el("div",{class:"stage"+(S.hideIgnored?" hide-ignored":"")+
+    (S.onlyCheck?" only-check":"")});
+  // Fit means fit the whole page, not fill the width. A portrait page at full
+  // width is taller than the viewport, and the overflow used to be hidden, so
+  // the bottom of a document page was simply unreachable. Capping the width by
+  // the page's own aspect ratio makes the whole of it visible at 1x, whatever
+  // shape it is, and zoom then multiplies that fitted size.
+  const fitW = "min(100%, " + (74 * (pg.width / pg.height)).toFixed(2) + "vh)";
+  stage.style.width = S.zoom <= 1 ? fitW
+                                  : "calc(" + fitW + " * " + S.zoom + ")";
+  // Ask for a render that matches the zoom, or zooming in just magnifies blur.
+  const renderW = Math.min(4400, Math.round(1400*Math.max(1,S.zoom)));
+  stage.appendChild(el("img",{src:"/api/page?n="+S.page+"&w="+renderW,
+    alt:"Page "+(S.page+1)+" of the PDF, shown so you can see where each item sits."}));
+  (pg.tables||[]).forEach(t=>{
+    const [x0,y0,x1,y1]=t.bbox;
+    stage.appendChild(el("div",{"aria-hidden":"true",
+      class:"tbox"+(t.accepted?"":" off")+(S.selTable===t.id?" hl":""),
+      style:"left:"+(x0/pg.width*100)+"%;top:"+(y0/pg.height*100)+"%;width:"+
+        (Math.max(x1-x0,2)/pg.width*100)+"%;height:"+(Math.max(y1-y0,2)/pg.height*100)+"%;"},[
+      el("span",{class:"tag",text:t.accepted
+        ? "Table "+t.rows+"×"+t.cols : "Not a table"})]));
+  });
+  allOn(S.page).forEach(e=>{
+    const [x0,y0,x1,y1]=e.bbox;
+    const k=kindOf(e.role);
+    const num = e.role==="Artifact" ? "–" : String(e.order+1);
+    const name = (e.role==="Artifact" ? "Ignored" : "Item "+(e.order+1))+", "+
+      label(e.role)+", page "+(e.page+1)+": "+
+      (e.kind==="image" ? "image" : (e.text||"empty").slice(0,80));
+    const review = needsReview(e);
+    const b = el("button",{type:"button",class:"box","data-kind":k,
+      "aria-pressed":String(S.sel===e.id),
+      "data-check": review ? "1" : null,
+      "aria-label":name + (review ? ". Worth checking: "+e.note : ""),
+      style:"left:"+(x0/pg.width*100)+"%;top:"+(y0/pg.height*100)+"%;width:"+
+        (Math.max(x1-x0,2)/pg.width*100)+"%;height:"+(Math.max(y1-y0,2)/pg.height*100)+"%;",
+      onclick:()=>{ S.sel = S.sel===e.id?null:e.id;
+        S.itemTo = S.sel;            // bring its row into view in the list
+        render(); }},[
+      el("span",{class:"tag","aria-hidden":"true",text:num+" "+label(e.role)}),
+      review ? el("span",{class:"flag","aria-hidden":"true",text:"?"}) : null]);
+    stage.appendChild(b);
+  });
+  p.appendChild(zoomRow());
+  view.appendChild(stage);
+  p.appendChild(view);
+  const leg = [lg("var(--navy)","Heading"), lg("var(--blue)","Text"),
+    lg("var(--purple)","List"), lg("var(--pink)","Image"), lg("#6B7280","Ignored")];
+  if((pg.tables||[]).length) leg.push(lg("var(--teal)","Table"));
+  p.appendChild(el("div",{class:"legend"},leg));
+  if(S.assist.on){
+    const bar = el("div",{class:"row",style:"gap:.5rem;margin:.6rem 0 0;flex-wrap:wrap"});
+    bar.appendChild(el("button",{class:"mini act",type:"button",
+      disabled:S.assist.busy?"disabled":null,
+      text:S.assist.busy?"Checking\u2026":"Check this page's reading order",
+      onclick:()=> assistRun("order", {page:S.page}, j=>{
+        S.orderNotes = {page:j.page, problems:j.problems||[]};
+        render();
+        say((j.problems||[]).length
+          ? (j.problems.length+" place"+(j.problems.length===1?"":"s")+" worth a look")
+          : "That page reads in a sensible order");
+      })}));
+    bar.appendChild(el("span",{class:"hint",style:"margin:0",
+      text:"Sends the words and their positions, never the page image."}));
+    p.appendChild(bar);
+    const notes = S.orderNotes;
+    if(notes && notes.page === S.page){
+      if(!notes.problems.length){
+        p.appendChild(el("p",{class:"hint",text:"Claude found nothing out of order here."}));
+      } else {
+        const ul = el("ul",{class:"ordernotes"});
+        notes.problems.forEach(pr=>{
+          ul.appendChild(el("li",{},[
+            el("button",{class:"mini jump",type:"button",
+              text:"Item "+pr.position,
+              onclick:()=>{ S.sel=pr.id; S.itemTo=pr.id;
+                const e=findEl(pr.id); if(e) focusOn(e); render(); }}),
+            el("span",{text:" "+pr.why})]));
+        });
+        p.appendChild(el("p",{class:"hint",style:"margin:.5rem 0 .2rem",
+          text:"Claude thinks these read out of order. It is a suggestion, not a change."}));
+        p.appendChild(ul);
+      }
+    }
+  }
+
+  const tp = tablesPanel(pg);
+  if(tp) p.appendChild(tp);
+
+  // A single remembered point of interest, held as a fraction of the page, so a
+  // zoom keeps looking at whatever you were looking at and an ordinary re-render
+  // does not move the view at all.
+  //
+  // It is deliberately *not* recomputed from the selection on every render. It
+  // used to be, which meant clicking a box while zoomed in re-centred that box:
+  // a click meant as "grab here to drag" threw the page across the viewport
+  // instead. Panning now sets the focus, and only the item list moves it.
+  view.addEventListener("scroll", ()=> noteFocus(view), {passive:true});
+
+  if(S.zoom > 1 && S.focus){
+    const img = stage.querySelector("img");
+    // A scroll assignment is clamped to the element's *current* scrollable
+    // range, and until the image has loaded the stage has almost no height, so
+    // writing scrollTop early is silently rounded to 0. Wait for the image, then
+    // one turn of the loop for layout, then write.
+    // setTimeout rather than requestAnimationFrame: rAF does not fire when the
+    // page is not painting (a background tab, or a headless context), so the
+    // scroll would silently never happen. A timeout always runs.
+    const put = ()=> setTimeout(()=>{
+      view.scrollLeft = Math.max(0, S.focus.x * view.scrollWidth - view.clientWidth / 2);
+      view.scrollTop  = Math.max(0, S.focus.y * view.scrollHeight - view.clientHeight / 2);
+    }, 0);
+    if(img && img.complete && img.naturalHeight) put();
+    else if(img) img.addEventListener("load", put, {once:true});
+  }
+  return p;
+}
+const lg=(c,t)=> el("span",{},[el("i",{style:"border-color:"+c,"aria-hidden":"true"}),
+                              el("span",{text:t})]);
+
+const ZOOM_STEPS = [1, 1.5, 2, 3, 4];
+
+/* Drag to pan, on top of ordinary scrolling. The boxes are buttons covering most
+   of the page, so a drag almost always starts on one: movement past a small
+   threshold counts as a pan and the click that follows is swallowed, otherwise it
+   stays a click and selects the item. */
+// Record what the view is centred on, as a fraction of the page.
+// Called straight from the pan handler rather than relying only on scroll events:
+// those are frame-aligned and do not fire at all in a context that is not
+// painting, which would leave the focus stale and make a later zoom jump.
+function noteFocus(view){
+  if(S.zoom <= 1) return;
+  const w = view.scrollWidth, h = view.scrollHeight;
+  if(!w || !h) return;
+  S.focus = {x:(view.scrollLeft + view.clientWidth / 2) / w,
+             y:(view.scrollTop + view.clientHeight / 2) / h};
+}
+
+function attachPan(view){
+  let panning=false, moved=false, sx=0, sy=0, ox=0, oy=0, pid=null;
+  view.addEventListener("pointerdown", e=>{
+    if(e.button !== 0) return;
+    panning=true; moved=false; pid=e.pointerId;
+    sx=e.clientX; sy=e.clientY;
+    ox=view.scrollLeft; oy=view.scrollTop;
+  });
+  view.addEventListener("pointermove", e=>{
+    if(!panning || e.pointerId !== pid) return;
+    const dx = e.clientX - sx, dy = e.clientY - sy;
+    if(!moved && Math.abs(dx) + Math.abs(dy) < 5) return;
+    if(!moved){
+      moved = true;
+      view.style.cursor = "grabbing";
+      // Capture only once a drag has really started, so a quick drag that runs
+      // outside the frame keeps panning instead of letting go halfway across.
+      // Not on pointerdown: capture retargets the click that follows to the
+      // capturing element, so every plain click on a box would stop selecting it.
+      try{ view.setPointerCapture(pid); }catch(_){}
+    }
+    view.scrollLeft = ox - dx;
+    view.scrollTop  = oy - dy;
+    noteFocus(view);
+    e.preventDefault();
+  });
+  const end = ()=>{
+    if(!panning) return;
+    panning = false; view.style.cursor = "";
+    if(pid !== null){ try{ view.releasePointerCapture(pid); }catch(_){} pid = null; }
+  };
+  view.addEventListener("pointerup", end);
+  view.addEventListener("pointercancel", end);
+  view.addEventListener("click", e=>{
+    if(moved){ e.preventDefault(); e.stopPropagation(); moved = false; }
+  }, true);
+}
+
+function setZoom(z, announce){
+  const clamped = Math.max(1, Math.min(4, z));
+  if(clamped === S.zoom) return;
+  if(!S.focus) S.focus = {x:0.5, y:0.5};   // zoom into the middle, not the corner
+  S.zoom = clamped;
+  render();
+  if(announce !== false) say(clamped === 1
+    ? "Zoom reset to fit the page"
+    : "Zoomed to "+Math.round(clamped*100)+" percent");
+}
+
+function zoomRow(){
+  const i = ZOOM_STEPS.indexOf(S.zoom);
+  const at = i === -1 ? 0 : i;
+  const row = el("div",{class:"zoomrow"});
+  // Grouped: four related view controls read as one cluster rather than four
+  // buttons that happen to sit next to each other.
+  const seg = el("div",{class:"seg",role:"group","aria-label":"Page preview zoom"});
+  seg.appendChild(el("button",{class:"mini",type:"button",text:"−",
+    "aria-label":"Zoom out of the page preview",
+    disabled: at <= 0 ? "disabled" : null,
+    onclick:()=> setZoom(ZOOM_STEPS[Math.max(0, at-1)])}));
+  seg.appendChild(el("span",{class:"pct",role:"status",
+    "aria-label":"Page preview zoom "+Math.round(S.zoom*100)+" percent",
+    text:Math.round(S.zoom*100)+"%"}));
+  seg.appendChild(el("button",{class:"mini",type:"button",text:"+",
+    "aria-label":"Zoom into the page preview",
+    disabled: at >= ZOOM_STEPS.length-1 ? "disabled" : null,
+    onclick:()=> setZoom(ZOOM_STEPS[Math.min(ZOOM_STEPS.length-1, at+1)])}));
+  seg.appendChild(el("button",{class:"mini",type:"button",text:"Fit",
+    "aria-label":"Reset the page preview to fit the width",
+    disabled: S.zoom === 1 ? "disabled" : null,
+    onclick:()=> setZoom(1)}));
+  row.appendChild(seg);
+  if(S.help) row.appendChild(el("span",{class:"hint2",
+    text: S.zoom > 1
+      ? "Scroll, drag, or use the arrow keys to move around. Selecting an item brings it into view."
+      : "Zoom in where boxes sit close together and are hard to tell apart."}));
+  return row;
+}
+
+function itemsPanel(){
+  const p = el("div",{class:"panel"});
+  const head = el("div",{class:"labelrow"},[
+    el("h3",{text:"Items on page "+(S.page+1),style:"margin:0"})]);
+  const rh = helpFor("roles");
+  if(rh[0]) head.appendChild(rh[0]);
+  p.appendChild(head);
+  if(rh[1]) p.appendChild(rh[1]);
+  p.appendChild(el("p",{class:"hint",
+    text:"In reading order. Use Up and Down to change where something is read."}));
+  if(S.help){
+    // The three ideas people actually need here, as named buttons rather than a
+    // row of anonymous question marks.
+    const row = el("div",{class:"row",style:"gap:.4rem;margin:.1rem 0 .6rem;flex-wrap:wrap"});
+    const panels = [];
+    [["headings","What is a heading?"],["lists","What is a list?"],
+     ["order","What is reading order?"],
+     ["grouping","Splitting and joining"]].forEach(([topic,lbl])=>{
+      const [btn, panel] = helpFor(topic);
+      if(!btn) return;
+      btn.textContent = lbl;
+      btn.className = "mini info";
+      btn.removeAttribute("style");
+      row.appendChild(btn);
+      panels.push(panel);
+    });
+    p.appendChild(row);
+    panels.forEach(x=> p.appendChild(x));
+  }
+  const list = el("ul",{class:"items"});
+  // Put the list back where it was, for the same reason as the page strip: it is
+  // rebuilt on every render, and after reordering an item near the bottom it
+  // otherwise jumps back to the top, losing the place you were working in.
+  setTimeout(()=>{
+    if(!list.isConnected) return;
+    // An explicit "show me this one" wins over putting the scroll back. Clicking
+    // a box on the page has to bring its row into view, and restoring the old
+    // position would undo that.
+    if(S.itemTo){
+      const row = list.querySelector('[data-item="'+S.itemTo+'"]');
+      S.itemTo = null;
+      if(row){ row.scrollIntoView({block:"center"}); S.itemScroll = list.scrollTop; return; }
+    }
+    list.scrollTop = S.itemScroll || 0;
+  }, 0);
+  const live = liveOn(S.page);
+  let shown = S.hideIgnored ? live : allOn(S.page);
+  if(S.onlyCheck) shown = shown.filter(needsReview);
+  if(!shown.length) list.appendChild(el("li",{},[el("p",{class:"note",
+    text: S.onlyCheck
+      ? "Nothing on this page needs checking. Turn the filter off to see everything."
+      : "Nothing was found on this page. If the slide has words on it, they may be part of an image, so describe it on the Images step."})]));
+  shown.forEach(e=>{
+    const isArt = e.role==="Artifact";
+    const sel = el("select",{"aria-label":"Role for "+
+      (e.kind==="image"?"image":"“"+(e.text||"empty").slice(0,40)+"”")},
+      S.roleGroups.map(([g,rs])=> el("optgroup",{label:g},
+        rs.map(r=> el("option",{value:r,text:label(r),
+          selected:e.role===r?"selected":null})))));
+    sel.onchange = ()=>{
+      const was=e.role; e.role=sel.value;
+      // Choosing a role is an explicit decision, so it counts as reviewed.
+      markReviewed(e);
+      if(was==="Artifact"&&e.role!=="Artifact") e.order = live.length;
+      renumber(e.page); S.sel=e.id; save(0); render();
+      say("Set to "+label(e.role)+", and marked as checked.");
+    };
+    // The boxes drawn on the page have to match the real geometry of the content,
+    // so some are smaller than the 24px WCAG 2.2 asks of a target.  This row is
+    // the full-size equivalent control for the same job, which is what the
+    // "essential" exception requires you to provide.
+    const pick = el("button",{class:"txt",type:"button",
+      "aria-pressed":String(S.sel===e.id),
+      "aria-label":"Highlight on the page: "+
+        (e.kind==="image" ? "image" : (e.text||"empty").slice(0,60)),
+      title:e.text||"",
+      text:e.kind==="image"?"▦ image":(e.text||"(empty)"),
+      onclick:()=>{ S.sel = S.sel===e.id?null:e.id;
+        if(S.sel) focusOn(e);
+        render();
+        const b=document.querySelector('[aria-label^="'+(isArt?"Ignored":"Item "+(e.order+1))+'"]');
+        if(b) b.scrollIntoView({block:"nearest"}); }});
+    // Only the handle starts a drag, so selecting text or using the role menu
+    // inside the row never turns into one.
+    const grip = isArt ? null : el("span",{class:"grip","aria-hidden":"true",
+      title:"Drag to move in the reading order", text:"⠿"});
+    const row = el("div",{class:"row"},[
+      grip,
+      el("span",{class:"ord","aria-hidden":"true",text:isArt?"–":String(e.order+1)}),
+      pick, sel]);
+    // Name each control after the item it acts on: a screen reader user tabbing
+    // a long page otherwise hears "move earlier" a dozen times over.
+    const what = e.kind==="image" ? "the image" : "“"+(e.text||"empty").slice(0,40)+"”";
+    const ctl = el("div",{class:"row",style:"margin-top:.35rem"},[
+      el("button",{class:"mini step",type:"button","data-mv":e.id+"--1",
+        "aria-label":"Move "+what+" earlier in the reading order",text:"↑",
+        disabled:(isArt||e.order===0)?"disabled":null, onclick:()=>move(e.id,-1)}),
+      el("button",{class:"mini step",type:"button","data-mv":e.id+"-1",
+        "aria-label":"Move "+what+" later in the reading order",text:"↓",
+        disabled:(isArt||e.order>=live.length-1)?"disabled":null, onclick:()=>move(e.id,1)}),
+      canSplit(e) ? el("button",{class:"mini act",type:"button",
+        "aria-label":"Split "+what+" into separate items",
+        text:"Split", onclick:()=>splitItem(e.id)}) : null,
+      // Offered only where it can actually work: text never joins to an image.
+      (!isArt && e.order>0 && (live[e.order-1]||{}).kind === e.kind)
+        ? el("button",{class:"mini act",type:"button",
+            "aria-label":"Join "+what+" onto the item before it",
+            text:"Join up", onclick:()=>mergeUp(e.id)}) : null,
+      e.role==="LI"||e.role==="LI-ordered"
+        ? el("span",{class:"lvl",text:"nesting level "+e.level}) : null,
+      e.role!==e.auto_role ? el("span",{class:"badge chg",text:"changed"}) : null,
+      (e.reviewed && e.kind==="text" && !isArt)
+        ? el("span",{class:"badge ok",text:"✓ checked"}) : null
+    ]);
+    const review = needsReview(e);
+    const li = el("li",{class:(S.sel===e.id?"sel ":"")+(review?"check":""),
+      "data-item":e.id},[row,ctl]);
+    if(!isArt) attachDrag(li, grip, e);
+
+    if(e.kind==="text" && !isArt){
+      // Show the confidence on everything, not just the doubtful ones: seeing
+      // "Confident" on most rows is what makes the flagged ones mean something.
+      li.appendChild(el("div",{class:"conf"},[
+        el("span",{class:"num",text:e.reviewed&&e.score>=100?"From the file":confLabel(e.score)}),
+        el("span",{class:"bar"+(e.score>=REVIEW_THRESHOLD?" good":""),
+          role:"img","aria-label":"Confidence "+e.score+" out of 100"},
+          [el("i",{style:"width:"+Math.max(4,e.score)+"%"})])
+      ]));
+    }
+    if(review || (S.sel===e.id && e.note)){
+      li.appendChild(el("p",{class:review?"reason":"note",text:e.note}));
+    }
+    if(review){
+      li.appendChild(el("div",{class:"actions"},[
+        el("button",{class:"mini commit",type:"button",
+          "aria-label":"Mark “"+(e.text||"this item").slice(0,40)+"” as checked, keeping "+label(e.role),
+          text:"Looks right",
+          onclick:()=>{ markReviewed(e); save(0); render();
+            say("Marked as checked. "+toCheck().length+" left to check."); }}),
+        el("span",{class:"lvl",text:"or change the role above"})
+      ]));
+    }
+    list.appendChild(li);
+  });
+  p.appendChild(list);
+  return p;
+}
+
+/* ---------- step 3: images ---------- */
+/* Form fields need a name, for the same reason an image needs a description: it
+   is the only thing a screen reader has to announce. Without one the field reads
+   as "edit text" and nothing else, and PDF/UA fails the file for it (7.18.1).
+   The name is proposed from the label printed beside the field, which is right
+   often enough to be worth offering and wrong often enough to need confirming. */
+function hasFields(){
+  return S.doc.pages.some(p=> p.elements.some(e=> e.kind==="field"));
+}
+function fieldsPanel(v){
+  const fields = [];
+  S.doc.pages.forEach(p=> p.elements.forEach(e=>{ if(e.kind==="field") fields.push(e); }));
+  if(!fields.length) return;
+  const need = fields.filter(e=> !(e.alt||"").trim()).length;
+  const box = el("div",{class:"panel"});
+  const head = el("div",{class:"pagehead"},[
+    el("h3",{text: fields.length===1 ? "One form field" : fields.length+" form fields"}),
+    el("span",{class:"of", text: need
+      ? need+(need===1?" still has no name":" still have no name")
+      : "all named"})]);
+  box.appendChild(head);
+  box.appendChild(el("p",{class:"hint",
+    text:"Someone filling this in with a screen reader hears only the name you give "+
+         "each field. Where a label is printed beside the field, it has been proposed."}));
+  const list = el("ul",{class:"figs"});
+  fields.forEach(e=>{
+    const li = el("li",{"data-field":e.id});
+    const lab = el("label",{class:"lbl",
+      text:"Name for the field on page "+(e.page+1)});
+    const box2 = el("input",{type:"text", class:"alt", value:e.alt||"",
+      placeholder:"What is this field for?",
+      "aria-describedby": e.note ? "fn-"+e.id : null});
+    box2.oninput = ()=>{ e.alt = box2.value; markReviewed(e); save(); renderFoot(); };
+    li.appendChild(lab); li.appendChild(box2);
+    if(e.note) li.appendChild(el("p",{class:"why",id:"fn-"+e.id,text:e.note}));
+    list.appendChild(li);
+  });
+  box.appendChild(list);
+  v.appendChild(box);
+}
+
+/* Optional help from Claude. Off until it is switched on, and switched on per
+   session rather than remembered, because the thing being sent is whatever
+   document happens to be open and that changes. */
+async function assistDetect(){
+  try{
+    const j = await api("/api/assist",{method:"POST",
+      headers:{"Content-Type":"application/json"},
+      body:JSON.stringify({action:"detect"})});
+    S.assist.route = j.assist.route; S.assist.label = j.assist.label;
+    // Detection is async and the first render has already happened by the time it
+    // lands, so draw again or the panel never appears.
+    if(S.loaded) render();
+  }catch(err){ S.assist.route = null; S.assist.label = ""; }
+}
+function assistPanel(){
+  if(!S.assist.route) return null;
+  const box = el("div",{class:"panel assist"});
+  const head = el("div",{class:"pagehead"},[
+    el("h3",{text:"Use Claude for the two things a script cannot do"}),
+    el("span",{class:"of", text: S.assist.on ? "on for this document" : "off"})]);
+  box.appendChild(head);
+  box.appendChild(el("p",{class:"hint",
+    text:"It can draft a description for each image and check whether a page reads "+
+         "in a sensible order. Both come back as suggestions: nothing is accepted "+
+         "for you, and a draft you have not read still counts as outstanding."}));
+  box.appendChild(el("p",{class:"lim",
+    text:"Switching this on sends content out of this Mac. Descriptions send a crop "+
+         "of the image itself; the reading-order check sends only the words and "+
+         "where they sit, never a picture. Nothing is sent until you ask for it, "+
+         "and nothing is sent at all while this is off."}));
+  const row = el("div",{class:"row",style:"gap:.5rem;flex-wrap:wrap"});
+  row.appendChild(el("button",{class:"mini toggle",type:"button",
+    "aria-pressed":String(S.assist.on),
+    text: S.assist.on ? "Turn off" : "Turn on for this document",
+    onclick:()=>{ S.assist.on = !S.assist.on; render();
+      say(S.assist.on ? "Claude turned on for this document" : "Claude turned off"); }}));
+  row.appendChild(el("span",{class:"hint",style:"margin:0",text:S.assist.label}));
+  box.appendChild(row);
+  return box;
+}
+
+async function assistRun(action, body, onDone){
+  if(S.assist.busy) return;
+  S.assist.busy = true; render();
+  try{
+    const j = await api("/api/assist",{method:"POST",
+      headers:{"Content-Type":"application/json"},
+      body:JSON.stringify(Object.assign({action, doc:S.doc}, body||{}))});
+    S.assist.busy = false;
+    onDone(j);
+  }catch(err){
+    S.assist.busy = false; S.assist.error = err.message; render();
+    say("That did not work: " + err.message);
+  }
+}
+
+function viewImages(v){
+  const imgs=[]; S.doc.pages.forEach(p=>p.elements.forEach(e=>{
+    if(e.kind==="image") imgs.push(e); }));
+  const need = imgs.filter(e=> e.role==="Figure" && !(e.alt||"").trim()).length;
+  v.appendChild(intro(hasFields() ? "Describe the images and name the fields"
+                                  : "Describe the images",
+    need ? need+" image"+(need===1?"":"s")+" still need"+(need===1?"s":"")+" a description."
+         : "Every image is either described or marked decorative.",
+    ["Anything that carries meaning needs a description. Anything that is pure decoration, a logo, a background shape, a divider, should be marked decorative so it is skipped rather than described.",
+     "Write what a person would miss if the image were not there. If the image is a screenshot of text, the words need to be in the description. “Image”, “chart” and a filename all pass automated checkers and tell a reader nothing."],
+    "figures"));
+
+  if(S.help){
+    const row = el("div",{class:"row",style:"gap:.4rem;margin-bottom:1rem;flex-wrap:wrap"});
+    const panels = [];
+    [["alt","How do I write a good description?"],
+     ["decorative","When should I mark something decorative?"]].forEach(([topic,lbl])=>{
+      const [btn, panel] = helpFor(topic);
+      if(!btn) return;
+      btn.textContent = lbl; btn.className = "mini info"; btn.removeAttribute("style");
+      row.appendChild(btn); panels.push(panel);
+    });
+    v.appendChild(row);
+    panels.forEach(x=> v.appendChild(x));
+  }
+
+  if(S.assist.on && need){
+    const bar = el("div",{class:"row",style:"gap:.5rem;margin:0 0 1rem;flex-wrap:wrap"});
+    bar.appendChild(el("button",{class:"btn ghost",type:"button",
+      disabled:S.assist.busy?"disabled":null,
+      text: S.assist.busy ? "Drafting\u2026"
+                          : "Draft the "+need+" missing description"+(need===1?"":"s"),
+      onclick:()=> assistRun("alt", {ids: imgs.filter(e=> e.role==="Figure" &&
+          !(e.alt||"").trim()).map(e=>e.id)}, j=>{
+        absorb(j); render();
+        say((j.drafted||0)+" description"+((j.drafted||0)===1?"":"s")+
+            " drafted. Read each one against its picture before you export.");
+      })}));
+    bar.appendChild(el("span",{class:"hint",style:"margin:0",
+      text:"Each one arrives as a draft, unread, and still counts as outstanding."}));
+    v.appendChild(bar);
+  }
+
+  fieldsPanel(v);
+
+  if(!imgs.length){ v.appendChild(el("div",{class:"panel"},[
+    el("p",{text:"No images were found in this PDF."})])); return; }
+
+  const list = el("ul",{class:"figs"});
+  imgs.forEach(e=>{
+    const dec = e.role==="Artifact";
+    const box = e.bbox.map(n=>Math.round(n)).join(",");
+    const ta = el("textarea",{rows:"3",id:"alt-"+e.id,
+      placeholder:"What does this show?"});
+    ta.value = e.alt||"";
+    ta.oninput = ()=>{ e.alt=ta.value; save(500);
+      const host = ta.closest("li");
+      if(host) host.querySelectorAll("[data-warn]").forEach(n=>{
+        n.hidden = !!ta.value.trim(); }); };
+    const toggle = el("button",{class:"mini toggle",type:"button","aria-pressed":String(dec),
+      "aria-label":(dec?"Decorative — will be skipped":"Mark as decorative")+
+        ": image on page "+(e.page+1)+", "+
+        Math.round(e.bbox[2]-e.bbox[0])+" by "+Math.round(e.bbox[3]-e.bbox[1])+" points",
+      text:dec?"Decorative — will be skipped":"Mark as decorative",
+      onclick:()=>{ e.role = dec ? "Figure" : "Artifact";
+        if(e.role==="Artifact") e.alt="";
+        renumber(e.page); save(0); render();
+        say(e.role==="Artifact"?"Marked decorative":"Now needs a description"); }});
+    const problems = (S.issues||[]).filter(i=>i.id===e.id&&i.kind==="alt");
+    list.appendChild(el("li",{},[
+      el("div",{},[
+        el("img",{src:"/api/crop?n="+e.page+"&box="+box,
+          alt:"Detail from page "+(e.page+1)+" showing the image being described."}),
+        el("p",{class:"meta",text:"Page "+(e.page+1)+" · "+
+          Math.round(e.bbox[2]-e.bbox[0])+"×"+Math.round(e.bbox[3]-e.bbox[1])+"pt"}),
+        el("p",{class:"meta"},[el("button",{class:"mini jump",type:"button",
+          text:"See it on the page",
+          "aria-label":"Show page "+(e.page+1)+" with this image highlighted",
+          onclick:()=>{ S.page=e.page; S.sel=e.id; focusOn(e);
+            S.itemTo=e.id; go(2); }})])]),
+      el("div",{},[
+        el("div",{class:"field"},[
+          el("label",{for:"alt-"+e.id,text:"Description"}),
+          dec ? el("p",{class:"hint",text:"Skipped, so no description is needed."}) : ta]),
+        el("div",{class:"row"},[toggle]),
+        e.note ? el("p",{class:"meta",text:e.note}) : null,
+        ...problems.map(i=>el("p",{class:"meta","data-warn":"1",
+          style:"color:#A5124B", text:i.message+" "+i.fix}))
+      ])
+    ]));
+  });
+  v.appendChild(list);
+}
+
+/* ---------- step 4: export ---------- */
+function viewExport(v){
+  const s=S.summary;
+  v.appendChild(intro("Check and export",
+    "Anything below that says “needed” will stop the file being conformant.",
+    ["Warnings will not stop it, but they are the things a real reader notices.",
+     "On export the file is checked against PDF/UA, the accessibility standard for PDFs, and you are told exactly what passed and what did not."],
+    "conformance"));
+
+  if(s.to_check){
+    v.appendChild(el("div",{class:"unseen",role:"note"},[
+      el("p",{style:"margin:0 0 .35rem",html:"<strong>"+s.to_check+
+        (s.to_check===1?" item was":" items were")+" tagged by guesswork and "+
+        (s.to_check===1?"has":"have")+" not been checked.</strong>"}),
+      el("p",{style:"margin:0 0 .45rem",
+        text:"These are the ones where the layout did not make the answer obvious, "+
+             "usually a bold label that could be a heading, or something sitting "+
+             "between two columns. Nothing downstream will question them."}),
+      el("div",{},[el("button",{class:"mini jump",type:"button",
+        text:"Review them now",
+        onclick:()=>{ const first = toCheck()[0];
+          if(first){ S.page=first.page; S.sel=first.id; S.onlyCheck=true; go(2); } }})])]));
+  }
+
+  // The mistake worth catching: skipping straight here without looking at the
+  // later pages, which is easy to do and invisible once the file is written.
+  const unseen = unseenPages();
+  if(unseen.length && s.pages>1){
+    const list = unseen.length>8
+      ? unseen.slice(0,8).map(n=>n+1).join(", ")+" and "+(unseen.length-8)+" more"
+      : unseen.map(n=>n+1).join(", ");
+    v.appendChild(el("div",{class:"unseen",role:"note"},[
+      el("p",{style:"margin:0 0 .35rem",html:"<strong>You have not looked at "+
+        (unseen.length===1?"page ":"pages ")+list+" yet.</strong>"}),
+      el("p",{style:"margin:0 0 .45rem",
+        text:"You can export without doing that, but nothing downstream checks whether a page reads in a sensible order, so an unreviewed page is the most likely place for a problem to survive."}),
+      el("div",{},[el("button",{class:"mini jump",type:"button",
+        text:"Go to page "+(unseen[0]+1),
+        onclick:()=>{ S.page=unseen[0]; go(2); }})])]));
+  }
+  v.appendChild(el("div",{class:"stats"},[
+    stat(s.pages,"pages"), stat(s.tagged,"items tagged"),
+    stat(s.headings,"headings"),
+    stat(s.figures_described+"/"+s.figures,"images described"),
+    stat(s.blockers,"still needed"), stat(s.warnings,"warnings")]));
+
+  if(S.result) v.appendChild(resultPanel(S.result));
+
+  const btns = el("div",{class:"panel",style:"margin-bottom:1rem"},[
+    el("h3",{text:"Export"}),
+    el("p",{class:"hint",text:"Your original file is left exactly as it is. The tagged copy is written as a new file."}),
+    el("div",{class:"row",style:"gap:.6rem;flex-wrap:wrap"},[
+      el("button",{class:"btn pink",type:"button",id:"exp",
+        disabled:S.exporting?"disabled":null,
+        onclick:()=>doExport(true)},[
+        S.exporting?el("span",{class:"spin","aria-hidden":"true"}):null,
+        el("span",{text:S.exporting?" Working…":"Export accessible PDF…"})]),
+      el("button",{class:"btn ghost",type:"button",disabled:S.exporting?"disabled":null,
+        text:"Save beside the original",onclick:()=>doExport(false)})])]);
+  v.appendChild(btns);
+
+  const iss = S.issues||[];
+  const groups = [["blocker","Needed"],["warning","Worth fixing"],["suggestion","Have a look"]];
+  groups.forEach(([sev,title])=>{
+    const mine = iss.filter(i=>i.severity===sev);
+    if(!mine.length) return;
+    v.appendChild(el("h3",{text:title+" ("+mine.length+")",style:"margin-top:1.1rem"}));
+    const ul = el("ul",{class:"issues"});
+    mine.slice(0,40).forEach(i=>{
+      ul.appendChild(el("li",{"data-sev":sev},[
+        el("div",{class:"sev",text:sev==="blocker"?"needed":sev}),
+        el("div",{text:i.message}),
+        i.fix?el("p",{class:"fix",text:i.fix}):null,
+        i.id?el("div",{class:"go"},[el("button",{class:"mini jump",type:"button",
+          text:"Go to it"+(i.page!==null?" (page "+(i.page+1)+")":""),
+          onclick:()=>{ const e=findEl(i.id); if(!e) return;
+            S.page=e.page; S.sel=e.id; focusOn(e); S.itemTo=e.id;
+            go(i.kind==="alt"?3:2); }})]):null
+      ]));
+    });
+    if(mine.length>40) ul.appendChild(el("li",{},[el("p",{class:"fix",
+      text:"and "+(mine.length-40)+" more of the same kind."})]));
+    v.appendChild(ul);
+  });
+  if(!iss.length) v.appendChild(el("div",{class:"panel"},[
+    el("p",{text:"Nothing outstanding. Worth a last look at the reading order on any busy slide before you send it."})]));
+}
+
+function resultPanel(r){
+  const v = r.verapdf;
+  const pass = v && v.compliant;
+  const box = el("div",{class:"result "+(pass?"pass":"fail"),role:"region",
+    "aria-label":"Export result"});
+  box.appendChild(el("h2",{text: pass ? "Exported and conformant"
+    : (v ? "Exported, but not yet conformant" : "Exported, not verified here")}));
+  box.appendChild(el("p",{},[el("span",{text:"Saved to "}),
+    el("strong",{text:r.out})]));
+  if(v) box.appendChild(el("p",{text:"PDF/UA-1: "+v.passed+" of "+(v.passed+v.failed)+
+    " rules pass"+(v.failed?", "+v.failedChecks+" failed checks":"")+"."}));
+  else box.appendChild(el("p",{class:"fix",
+    // Telling a non-technical user to run a brew command is no help. Say what
+    // did happen, and what is simply unverified.
+    text:"The tags were written and the text was checked. What could not be done "+
+         "on this Mac is the independent conformance check, because the checker "+
+         "(veraPDF) is not installed. The file is still tagged; it just has not "+
+         "been given a formal pass or fail. Ask whoever sent you this app if you "+
+         "need that verdict."}));
+  if(v && v.rules && v.rules.length){
+    const ul=el("ul");
+    v.rules.forEach(x=>ul.appendChild(el("li",{text:x.clause+" test "+x.test+": "+
+      x.description+" ("+x.checks+" checks)"})));
+    box.appendChild(ul);
+  }
+  const ex = r.extraction;
+  if(ex && !ex.ok) box.appendChild(el("p",{class:"fix",
+    text:"Warning: the text does not extract cleanly ("+ex.stranded+
+      " stranded letters). A screen reader will read broken words. This comes from the fonts in the original file, so it has to be fixed there — tagging cannot repair it."}));
+  box.appendChild(el("p",{class:"fix",style:"margin-top:.5rem",
+    text:"Conformance is a floor, not proof the document reads well. No checker can tell whether a description is useful or whether the reading order makes sense — that is what you confirmed on the way here."}));
+  box.appendChild(el("div",{class:"row",style:"gap:.5rem;margin-top:.6rem"},[
+    el("button",{class:"btn ghost",type:"button",text:"Show in Finder",
+      onclick:()=>api("/api/reveal",{method:"POST",
+        headers:{"Content-Type":"application/json"},
+        body:JSON.stringify({path:r.out})}).catch(()=>{})})]));
+  return box;
+}
+
+async function doExport(ask){
+  S.exporting=true; S.error=""; render(); say("Writing the tagged PDF and checking it");
+  try{
+    const j = await api("/api/export",{method:"POST",
+      headers:{"Content-Type":"application/json"},
+      body:JSON.stringify({doc:S.doc, ask:!!ask})});
+    S.exporting=false;
+    if(j.cancelled){ render(); return; }
+    S.result=j; if(j.summary) S.summary=j.summary;
+    render();
+    say(j.verapdf&&j.verapdf.compliant ? "Exported and conformant." : "Exported.");
+    const h=document.querySelector(".result h2"); if(h){ h.tabIndex=-1; h.focus(); }
+  }catch(err){ S.exporting=false; S.error=err.message; render(); }
+}
+
+/* ---------- help toggle ---------- */
+function renderHelpToggle(){
+  const b = document.getElementById("helptog");
+  b.setAttribute("aria-pressed", String(S.help));
+  b.setAttribute("aria-label", S.help
+    ? "Help tips are on. Turn them off to hide the explanations."
+    : "Help tips are off. Turn them on to show explanations.");
+  document.getElementById("helptoglabel").textContent =
+    S.help ? "Help tips on" : "Help tips off";
+}
+document.getElementById("helptog").onclick = ()=>{
+  S.help = !S.help;
+  store("help", S.help);
+  renderHelpToggle();
+  render();
+  say(S.help ? "Help tips on" : "Help tips off");
+};
+
+/* ---------- quit ---------- */
+function renderQuitButton(){
+  const b = document.getElementById("quit");
+  if(b) b.hidden = !!S.native;
+}
+document.getElementById("quit").onclick = async ()=>{
+  // The app is a local server, so closing the tab would leave it running.
+  const body = document.querySelector(".app");
+  try{ await api("/api/quit",{method:"POST"}); }catch(e){}
+  body.innerHTML = "";
+  const p = el("div",{class:"bye"},[
+    el("h2",{text:"PDF Tagger has stopped"}),
+    el("p",{text:"You can close this tab. Any file you exported is untouched."})]);
+  body.appendChild(p);
+  const h = p.querySelector("h2"); h.tabIndex=-1; h.focus();
+  document.title = "PDF Tagger — stopped";
+};
+
+/* ---------- boot ---------- */
+(async ()=>{
+  S.help = recall("help", true);
+  renderHelpToggle();
+  try{ absorb(await api("/api/state")); }catch(e){ S.error=e.message; }
+  renderQuitButton();
+  if(S.loaded) S.step=1;
+  render();
+})();
+</script>
+</body>
+</html>

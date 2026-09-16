@@ -1,0 +1,21 @@
+# Build output and the bundled runtime: both are rebuilt by build/make_app.sh,
+# and the veraPDF JRE alone is 63MB. Releases carry the binary, not the repo.
+build/work/
+build/dist/
+build/verapdf/
+dist/
+*.egg-info/
+__pycache__/
+*.pyc
+.venv/
+
+# Local corpus: paths to real PDFs on this machine. See corpus.json.example.
+tests/corpus.json
+
+.DS_Store
+
+# Real PDFs used as fixtures: a customer deck and a product one-pager. Neither is
+# ours to publish, so the checks that need them skip on a fresh clone. Drop any
+# two exports in with these names and they run.
+tests/slides-6page.pdf
+tests/slides-1page.pdf
