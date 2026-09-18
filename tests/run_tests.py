@@ -1727,6 +1727,46 @@ def test_layout_rules():
         check("its quotations are picked up", len(qs) >= 2, f"{len(qs)} found")
 
 
+def test_kickers():
+    section("4e. Eyebrow labels, and what is not one")
+    from app.analyse import _demote_kickers
+    from app.model import Element
+
+    def h(text, size, x, y, role="H3", order=0):
+        return Element(id=text[:8], page=0, kind="text", role=role, auto_role=role,
+                       text=text, size=size, order=order,
+                       bbox=(x, y, x + 6 * len(text), y + size * 1.2))
+
+    # The real pattern: a small label immediately above the bigger heading it
+    # introduces, in the same column.
+    lbl, head = h("THE SCOPE", 9, 48, 100, order=0), h("What You Are Building", 14, 48, 118, "H2", 1)
+    _demote_kickers([lbl, head])
+    check("a label above its bigger heading is demoted", lbl.role == "P", lbl.role)
+    check("and the heading itself is untouched", head.role == "H2", head.role)
+
+    # Same two sizes, but the bigger heading is ABOVE the label rather than below
+    # it. Nothing introduces anything here, so neither moves.
+    head2 = h("What You Are Building", 14, 48, 100, "H2", 1)
+    lbl2 = h("THE SCOPE", 9, 48, 300, order=0)
+    _demote_kickers([lbl2, head2])
+    check("a label BELOW the bigger heading is not a kicker", lbl2.role == "H3",
+          f"{lbl2.role}: {lbl2.note[:48]}")
+
+    # Side by side in different columns: a label bottom-left and a heading
+    # top-right are not a pair, whatever the reading order says.
+    lbl3 = h("Owner and next step", 9, 40, 300, order=0)
+    head3 = h("Cost of delay", 14, 460, 110, "H2", 1)
+    _demote_kickers([lbl3, head3])
+    check("a label in another column is not a kicker", lbl3.role == "H3",
+          f"{lbl3.role}: {lbl3.note[:48]}")
+
+    # A label with a big vertical gap below it is introducing nothing either.
+    lbl4 = h("THE SCOPE", 9, 48, 100, order=0)
+    head4 = h("What You Are Building", 14, 48, 400, "H2", 1)
+    _demote_kickers([lbl4, head4])
+    check("a label far above a heading is not a kicker", lbl4.role == "H3", lbl4.role)
+
+
 def test_detection():
     section("4f. What counts as a heading")
     from app.analyse import _is_prose, _is_figure
@@ -2509,6 +2549,30 @@ def test_assist():
         except assist.Unavailable as exc:
             check("an unreadable answer is refused", True, str(exc)[:40])
 
+        # A .app launched from the Dock has no login-shell PATH, so the binary has
+        # to be found where it installs itself or the feature silently vanishes on
+        # a machine that has it. This is the bug that hid the whole feature.
+        home = os.path.join(TMP, "fakehome")
+        os.makedirs(os.path.join(home, ".local", "bin"), exist_ok=True)
+        fake = os.path.join(home, ".local", "bin", "claude")
+        with open(fake, "w") as fh:
+            fh.write("#!/bin/sh\nexit 0\n")
+        os.chmod(fake, 0o755)
+        real_path, real_home = os.environ.get("PATH", ""), os.environ.get("HOME", "")
+        os.environ["PATH"] = "/usr/bin:/bin"
+        os.environ["HOME"] = home
+        try:
+            check("Claude Code is found without a login-shell PATH",
+                  assist.detect()["route"] == "claude-code", assist.detect()["label"])
+            check("and it is the one that was actually installed",
+                  assist.detect()["detail"] == fake, assist.detect()["detail"])
+            os.remove(fake)
+            check("with nothing installed it reports nothing available",
+                  assist.detect()["route"] in (None, "api-key", "api-key-missing"),
+                  str(assist.detect()["route"]))
+        finally:
+            os.environ["PATH"], os.environ["HOME"] = real_path, real_home
+
         # Alt text: the shapes a model actually returns.
         img = os.path.join(TMP, "crop.png")
         pymupdf.open().new_page(width=40, height=40).parent.save(img) if False else None
@@ -3113,6 +3177,7 @@ def main():
             ("shared", test_shared_forms),
             ("tables", test_tables),
             ("edits", test_edits),
+            ("kickers", test_kickers),
             ("detect", test_detection),
             ("flat", test_flat_foreign_tags),
             ("wrap", test_wrap_vs_break),

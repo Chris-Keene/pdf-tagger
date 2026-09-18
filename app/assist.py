@@ -18,6 +18,7 @@ Neither is a dependency of the app. If neither resolves, the feature simply is n
 offered and nothing else changes.
 """
 
+import glob
 import json
 import os
 import shutil
@@ -36,9 +37,42 @@ class Unavailable(Exception):
     """No usable route to Claude, with a line the user can act on."""
 
 
+# Where Claude Code installs itself. A .app launched from the Dock inherits the
+# system PATH (/usr/bin:/bin and friends) and NOT the one from a login shell, so
+# `which claude` finds nothing even on a machine that plainly has it: the native
+# installer puts it under ~/.local/bin, which no GUI process has ever heard of.
+# Looking in the usual places is the difference between the feature appearing and
+# the app claiming Claude is not installed.
+_CLI_PLACES = (
+    "~/.local/bin/claude",
+    "~/.claude/local/claude",
+    "/opt/homebrew/bin/claude",
+    "/usr/local/bin/claude",
+    "~/.bun/bin/claude",
+    "~/.volta/bin/claude",
+)
+
+
+def _claude_exe():
+    """The Claude Code binary, from PATH or from where it is normally installed."""
+    found = shutil.which("claude")
+    if found:
+        return found
+    for place in _CLI_PLACES:
+        path = os.path.expanduser(place)
+        if os.access(path, os.X_OK) and not os.path.isdir(path):
+            return path
+    # npm/nvm keeps one per node version, so the exact directory is not knowable.
+    for path in sorted(glob.glob(os.path.expanduser(
+            "~/.nvm/versions/node/*/bin/claude")), reverse=True):
+        if os.access(path, os.X_OK):
+            return path
+    return ""
+
+
 def detect():
     """Which route is available, without spending anything to find out."""
-    cli = shutil.which("claude")
+    cli = _claude_exe()
     if cli:
         return {"route": "claude-code", "detail": cli,
                 "label": "Claude Code, signed in on this Mac"}
@@ -57,14 +91,16 @@ def detect():
 
 def _run_cli(prompt, model, cwd):
     """One non-interactive Claude Code call, returning its text."""
-    exe = shutil.which("claude")
+    exe = _claude_exe()
     if not exe:
         raise Unavailable("Claude Code is not installed on this Mac.")
     try:
+        env = dict(os.environ)
+        env["PATH"] = os.path.dirname(exe) + os.pathsep + env.get("PATH", "")
         proc = subprocess.run(
             [exe, "-p", "--output-format", "json", "--model", model, prompt],
             cwd=cwd, capture_output=True, text=True, timeout=_CLI_TIMEOUT,
-            stdin=subprocess.DEVNULL)
+            stdin=subprocess.DEVNULL, env=env)
     except subprocess.TimeoutExpired:
         raise Unavailable("Claude Code did not answer in time.")
     try:

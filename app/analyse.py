@@ -1813,8 +1813,15 @@ def _demote_kickers(elements):
             continue
         if nxt.size <= e.size + 0.05:
             continue                     # the one after is not the bigger one
-        if nxt.bbox[1] - e.bbox[3] > e.size * 1.6:
-            continue                     # too far apart to be a pair
+        # A kicker sits directly above its heading, so the gap has to be small AND
+        # the right way round. Testing only the upper bound let a label at the
+        # bottom of one column pair with a heading at the top of the next, where
+        # the gap is negative and sails under any ceiling.
+        gap = nxt.bbox[1] - e.bbox[3]
+        if not -e.size * 0.5 <= gap <= e.size * 1.6:
+            continue                     # not stacked one above the other
+        if e.bbox[0] >= nxt.bbox[2] or nxt.bbox[0] >= e.bbox[2]:
+            continue                     # no horizontal overlap, so not a pair
         e.auto_role = e.role = "P"
         e.score = 82
         e.confidence = "high"
