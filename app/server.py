@@ -34,6 +34,11 @@ if not os.path.isdir(UI):
     UI = os.path.join(os.path.dirname(os.path.abspath(__file__)), "ui")
 STATE = {"model": None, "source": None, "tmpdir": None, "last_out": None}
 LOCK = threading.Lock()
+
+# Drafting a dozen descriptions is one request that takes minutes, so the UI has
+# nothing to show unless the work reports itself as it goes. Read without the
+# lock on purpose: a slightly stale count is fine, a blocked poll is not.
+PROGRESS = {"active": False, "done": 0, "total": 0, "label": ""}
 # Set to the `native` module when running in a real window. Left None in browser
 # mode, so the osascript fallbacks stay in play and nothing here imports AppKit
 # unless it is actually needed.
@@ -341,6 +346,8 @@ class Handler(BaseHTTPRequestHandler):
                 act = data.get("action")
                 if act == "detect":
                     return self._json({"assist": assist.detect()})
+                if act == "progress":
+                    return self._json({"progress": dict(PROGRESS)})
                 with LOCK:
                     if data.get("doc"):
                         STATE["model"] = DocModel.from_json(data["doc"])
@@ -358,6 +365,7 @@ class Handler(BaseHTTPRequestHandler):
                             {"page": data.get("page", 0),
                              "problems": _review_order(model, data.get("page", 0))})
                 except assist.Unavailable as exc:
+                    PROGRESS.update(active=False, label="")
                     return self._json({"error": str(exc)}, 503)
                 return self._json({"error": f"Unknown action {act!r}."}, 400)
 
@@ -427,6 +435,12 @@ def _draft_alt_text(model, ids):
     wanted = set(ids)
     doc = pymupdf.open(model.path)
     drafted = 0
+    todo = [e for pm in model.pages for e in pm.elements
+            if e.kind == "image" and not (wanted and e.id not in wanted)
+            and e.role != "Artifact" and not (e.alt or "").strip()
+            and e.bbox[2] - e.bbox[0] >= 4 and e.bbox[3] - e.bbox[1] >= 4]
+    PROGRESS.update(active=True, done=0, total=len(todo),
+                    label="Reading the first image")
     with tempfile.TemporaryDirectory(prefix="pdftagger-alt-") as tmp:
         for pm in model.pages:
             page = doc[pm.number]
@@ -444,15 +458,20 @@ def _draft_alt_text(model, ids):
                 crop = os.path.join(tmp, f"{e.id}.png")
                 page.get_pixmap(clip=pymupdf.Rect(x0, y0, x1, y1),
                                 dpi=150).save(crop)
-                text, decorative = assist.draft_alt(crop, context, pm.number + 1)
+                PROGRESS["label"] = (f"Image {PROGRESS['done'] + 1} of "
+                                     f"{PROGRESS['total']}, page {pm.number + 1}")
+                text, decorative, why = assist.draft_alt(crop, context, pm.number + 1)
+                PROGRESS["done"] += 1
+                because = f" It said: {why}." if why else ""
                 if decorative:
                     e.role = e.auto_role = "Artifact"
-                    e.note = ("Claude read this as decoration. Nothing has been "
-                              "settled: check it before you export.")
+                    e.note = ("Claude read this as decoration, so it would be "
+                              "skipped rather than announced." + because +
+                              " Nothing is settled: check it before you export.")
                 elif text:
                     e.alt = text
-                    e.note = ("Drafted by Claude from the image itself. Read it "
-                              "against the picture before you accept it.")
+                    e.note = ("Drafted by Claude from the image itself." + because +
+                              " Read it against the picture before you accept it.")
                 else:
                     continue
                 # A draft is not a decision. It stays outstanding until a person
@@ -461,6 +480,7 @@ def _draft_alt_text(model, ids):
                 e.score, e.confidence = 50, "low"
                 e.drafted = True
                 drafted += 1
+    PROGRESS.update(active=False, label="")
     return drafted
 
 

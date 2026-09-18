@@ -33,7 +33,7 @@ FONT_DIR = pathlib.Path.home() / "Library" / "Fonts"
 FACES = [("Outfit-Regular.ttf", 400), ("Outfit-SemiBold.ttf", 600),
          ("Outfit-Bold.ttf", 700)]
 
-VERSION = "1.19.0"
+VERSION = "1.20.0"
 ZIP_NAME = f"PDF-Tagger-{VERSION}.zip"
 ZIP_SIZE = "89MB"
 

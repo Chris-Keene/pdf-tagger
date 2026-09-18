@@ -2578,17 +2578,38 @@ def test_assist():
         pymupdf.open().new_page(width=40, height=40).parent.save(img) if False else None
         d2 = pymupdf.open(); d2.new_page(width=40, height=40)
         d2[0].get_pixmap().save(img); d2.close()
-        for reply, want, dec in (("The company logo", "The company logo", False),
-                                 ('Here:\n"A bar chart of defects"', "A bar chart of defects", False),
-                                 ("DECORATIVE", "", True),
-                                 ("\u201cSmart quoted\u201d", "Smart quoted", False)):
+        # The labelled shape the prompt asks for, and the loose shapes a model
+        # falls back to. The old unlabelled replies still have to parse, because a
+        # prompt change must not turn a working answer into a blank description.
+        cases = (
+            ("KIND: logo\nALT: Acme logo\nWHY: stylised wordmark, not running text",
+             "Acme logo", False, "stylised wordmark, not running text"),
+            ("KIND: decoration\nALT: NONE\nWHY: background gradient behind the title",
+             "", True, "background gradient behind the title"),
+            ("KIND: chart\nALT: Bar chart of defects rising each quarter\nWHY: axes and bars",
+             "Bar chart of defects rising each quarter", False, "axes and bars"),
+            ("The company logo", "The company logo", False, ""),
+            ('Here:\n"A bar chart of defects"', "A bar chart of defects", False, ""),
+            ("DECORATIVE", "", True, ""),
+            ("\u201cSmart quoted\u201d", "Smart quoted", False, ""),
+        )
+        for reply, want, dec, why_want in cases:
             assist._run_cli = lambda prompt, model, cwd, r=reply: r
             os.environ.pop("ANTHROPIC_API_KEY", None)
             if assist.detect()["route"] != "claude-code":
                 break
-            text, decorative = assist.draft_alt(img)
-            check(f"a reply of {reply[:18]!r} parses", (text, decorative) == (want, dec),
-                  str((text, decorative)))
+            text, decorative, why = assist.draft_alt(img)
+            check(f"a reply of {reply.splitlines()[0][:22]!r} parses",
+                  (text, decorative, why) == (want, dec, why_want),
+                  str((text, decorative, why)))
+
+        # The prompt has to name the trap it exists to avoid, or this is just a
+        # wish. A wordmark reads as text and gets transcribed instead of named.
+        rules = assist._ALT_RULES.lower()
+        check("the prompt tells it a wordmark is a logo",
+              "wordmark" in rules and "logo" in rules)
+        check("and it asks for a decorative verdict explicitly",
+              "decoration" in rules and "kind:" in rules)
 
         # An expired sign-in has a one-line fix, and the app must say it.
         def expired(*a, **k):

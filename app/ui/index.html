@@ -346,13 +346,54 @@ textarea{resize:vertical}
   border-radius:8px;margin-bottom:1rem}
 
 /* ---------- help system ---------- */
-header.bar .helptog{font:inherit;font-size:.82rem;font-weight:600;color:#fff;
-  background:none;border:1px solid #7C8CA8;border-radius:6px;padding:.15rem .6rem;
-  cursor:pointer;display:flex;align-items:center;gap:.35rem}
-header.bar .helptog:hover{background:#2B4B79}
-header.bar .helptog[aria-pressed="true"]{background:#2B4B79;border-color:#A9B8D0}
-header.bar .helptog .pip{width:.5rem;height:.5rem;border-radius:50%;background:#7C8CA8}
-header.bar .helptog[aria-pressed="true"] .pip{background:var(--pink)}
+header.bar .toggles{display:flex;align-items:center;gap:.55rem;flex-wrap:wrap}
+/* Both of these sit on a WHITE header. They used to be white-on-navy, left over
+   from when the bar was dark, which made the "off" state white text on white: a
+   1:1 button you could only find by tabbing onto it. The off state now carries
+   its own colour rather than relying on a filled pill. */
+header.bar .helptog{font:inherit;font-size:.82rem;font-weight:600;color:var(--accent-ink);
+  background:none;border:1px solid var(--muted);border-radius:6px;padding:.15rem .6rem;
+  cursor:pointer;display:flex;align-items:center;gap:.35rem;justify-content:flex-start}
+header.bar .helptog:hover{background:var(--accent-soft)}
+header.bar .helptog[aria-pressed="true"]{background:var(--accent-ink);
+  border-color:var(--accent-ink);color:#fff}
+header.bar .helptog .pip{width:.5rem;height:.5rem;border-radius:50%;background:var(--muted);flex:none}
+header.bar .helptog[aria-pressed="true"] .pip{background:#fff}
+
+header.bar .swtog{font:inherit;font-size:.82rem;font-weight:600;color:var(--muted);
+  background:none;border:1px solid transparent;border-radius:6px;
+  padding:.2rem .55rem .2rem .3rem;cursor:pointer;display:flex;align-items:center;gap:.45rem}
+header.bar .swtog:hover{background:var(--accent-soft);border-color:var(--line)}
+header.bar .swtog[aria-checked="true"]{color:var(--accent-ink)}
+header.bar .swtog .track{width:1.9rem;height:1.05rem;border-radius:999px;flex:none;
+  background:#EAF2F8;border:1px solid var(--muted);display:block;position:relative;
+  transition:background-color .15s ease,border-color .15s ease}
+header.bar .swtog .knob{position:absolute;top:50%;left:2px;width:.7rem;height:.7rem;
+  border-radius:50%;background:var(--muted);transform:translateY(-50%);
+  transition:transform .15s ease,background-color .15s ease}
+header.bar .swtog[aria-checked="true"] .track{background:var(--accent-ink);
+  border-color:var(--accent-ink)}
+header.bar .swtog[aria-checked="true"] .knob{background:#fff;
+  transform:translate(.85rem,-50%)}
+@media (prefers-reduced-motion:reduce){
+  header.bar .swtog .track,header.bar .swtog .knob{transition:none}}
+
+/* The drafting bar: a button that is about to take minutes needs room, and the
+   sentence explaining what a draft is belongs under it rather than jammed
+   alongside where it reads as a caption to the button. */
+.draftbar{border:1px solid var(--line);background:var(--accent-soft);border-radius:10px;
+  padding:.9rem 1rem;margin:0 0 1.15rem}
+.draftbar .btn{padding:.6rem 1.15rem}
+.draftbar .note{margin:.6rem 0 0;color:var(--muted);font-size:.86rem;line-height:1.5}
+.draftbar .prog{margin:.8rem 0 0}
+.draftbar .bar{height:.5rem;border-radius:999px;background:#FFFFFF;
+  border:1px solid var(--muted);overflow:hidden}
+.draftbar .bar > i{display:block;height:100%;background:var(--accent-ink);
+  transition:width .3s ease}
+.draftbar .bar.indet > i{width:35%;animation:slide 1.3s ease-in-out infinite}
+@keyframes slide{0%{margin-left:-35%}100%{margin-left:100%}}
+@media (prefers-reduced-motion:reduce){.draftbar .bar.indet > i{animation-duration:4s}}
+.draftbar .count{margin:.45rem 0 0;color:var(--ink);font-size:.86rem}
 
 /* A disclosure, not a hover tooltip: hover-only help is unreachable by keyboard
    and on touch, and it vanishes the moment you try to read it. */
@@ -440,9 +481,15 @@ header.bar .helptog[aria-pressed="true"] .pip{background:var(--pink)}
       <h1>PDF&nbsp;Tagger</h1>
     </div>
     <span class="filename" id="fname"></span>
-    <button class="helptog" type="button" id="helptog" aria-pressed="true">
-      <span class="pip" aria-hidden="true"></span><span id="helptoglabel">Help tips on</span>
-    </button>
+    <div class="toggles">
+      <button class="helptog" type="button" id="helptog" aria-pressed="true">
+        <span class="pip" aria-hidden="true"></span><span id="helptoglabel">Help tips on</span>
+      </button>
+      <button class="swtog" type="button" id="claudetog" role="switch" aria-checked="false" hidden>
+        <span class="track" aria-hidden="true"><span class="knob"></span></span>
+        <span id="claudetoglabel">Claude off</span>
+      </button>
+    </div>
     <button class="quit" type="button" id="quit">Quit</button>
   </header>
 
@@ -465,7 +512,7 @@ header.bar .helptog[aria-pressed="true"] .pip{background:var(--pink)}
 <script>
 "use strict";
 const S = {loaded:false, doc:null, summary:null, issues:[], roleGroups:[], step:0,
-           page:0, sel:null, selTable:null, zoom:1, focus:null, dragging:null, rail:0, railTo:null, itemScroll:0, itemTo:null, orderNotes:null, assist:{on:false,route:null,label:'',busy:false}, hideIgnored:true, onlyCheck:false, busy:false,
+           page:0, sel:null, selTable:null, zoom:1, focus:null, dragging:null, rail:0, railTo:null, itemScroll:0, itemTo:null, orderNotes:null, assist:{on:false,route:null,label:'',busy:false,progress:null}, hideIgnored:true, onlyCheck:false, busy:false,
            error:"", result:null,
            exporting:false, help:true, visited:{}};
 
@@ -1909,6 +1956,7 @@ async function assistDetect(){
     S.assist.route = j.assist.route; S.assist.label = j.assist.label;
     // Detection is async and the first render has already happened by the time it
     // lands, so draw again or the panel never appears.
+    renderClaudeToggle();
     if(S.loaded) render();
   }catch(err){ S.assist.route = null; S.assist.label = ""; }
 }
@@ -1929,27 +1977,70 @@ function assistPanel(){
          "where they sit, never a picture. Nothing is sent until you ask for it, "+
          "and nothing is sent at all while this is off."}));
   const row = el("div",{class:"row",style:"gap:.5rem;flex-wrap:wrap"});
-  row.appendChild(el("button",{class:"mini toggle",type:"button",
-    "aria-pressed":String(S.assist.on),
-    text: S.assist.on ? "Turn off" : "Turn on for this document",
-    onclick:()=>{ S.assist.on = !S.assist.on; render();
-      say(S.assist.on ? "Claude turned on for this document" : "Claude turned off"); }}));
-  row.appendChild(el("span",{class:"hint",style:"margin:0",text:S.assist.label}));
+  row.appendChild(el("span",{class:"hint",style:"margin:0",
+    text: (S.assist.on ? "Switched on. " : "Use the Claude switch in the top right "+
+           "to turn this on. ") + S.assist.label}));
   box.appendChild(row);
   return box;
 }
 
+/* A run of a dozen images is one request that can take minutes, so the button
+   alone says nothing. The server counts as it goes and this polls for that;
+   until the first image lands there is no count to show, so the bar runs
+   indeterminate rather than sitting at a dishonest zero. */
+function progressBar(total){
+  const wrap = el("div",{class:"prog"});
+  const pr = S.assist.progress;
+  const known = pr && pr.total > 0;
+  const pct = known ? Math.round((pr.done / pr.total) * 100) : 0;
+  const track = el("div",{class:"bar" + (known ? "" : " indet"),
+    role:"progressbar","aria-label":"Drafting descriptions"});
+  if(known){
+    track.setAttribute("aria-valuenow", String(pr.done));
+    track.setAttribute("aria-valuemin", "0");
+    track.setAttribute("aria-valuemax", String(pr.total));
+  }
+  track.appendChild(el("i",{style: known ? "width:"+pct+"%" : ""}));
+  wrap.appendChild(track);
+  wrap.appendChild(el("p",{class:"count", "aria-live":"polite",
+    text: known ? pr.done+" of "+pr.total+" done"+(pr.label ? ". "+pr.label : "")
+                : "Starting on "+total+" image"+(total===1?"":"s")+
+                  ". This can take a minute or two."}));
+  return wrap;
+}
+
+async function assistPoll(){
+  while(S.assist.busy){
+    try{
+      const j = await api("/api/assist",{method:"POST",
+        headers:{"Content-Type":"application/json"},
+        body:JSON.stringify({action:"progress"})});
+      if(!S.assist.busy) break;
+      const pr = j.progress || null;
+      const old = S.assist.progress;
+      // Only redraw when the number actually moved, or every poll rebuilds the
+      // whole view underneath the user for nothing.
+      if(!old || !pr || old.done !== pr.done || old.label !== pr.label){
+        S.assist.progress = pr; render();
+      }
+    }catch(err){ /* a dropped poll is not worth failing the run over */ }
+    await new Promise(r=> setTimeout(r, 700));
+  }
+}
+
 async function assistRun(action, body, onDone){
   if(S.assist.busy) return;
-  S.assist.busy = true; render();
+  S.assist.busy = true; S.assist.progress = null; render();
+  if(action === "alt") assistPoll();
   try{
     const j = await api("/api/assist",{method:"POST",
       headers:{"Content-Type":"application/json"},
       body:JSON.stringify(Object.assign({action, doc:S.doc}, body||{}))});
-    S.assist.busy = false;
+    S.assist.busy = false; S.assist.progress = null;
     onDone(j);
   }catch(err){
-    S.assist.busy = false; S.assist.error = err.message; render();
+    S.assist.busy = false; S.assist.progress = null;
+    S.assist.error = err.message; render();
     say("That did not work: " + err.message);
   }
 }
@@ -1981,19 +2072,26 @@ function viewImages(v){
   }
 
   if(S.assist.on && need){
-    const bar = el("div",{class:"row",style:"gap:.5rem;margin:0 0 1rem;flex-wrap:wrap"});
-    bar.appendChild(el("button",{class:"btn ghost",type:"button",
+    const bar = el("div",{class:"draftbar"});
+    const btn = el("button",{class:"btn",type:"button",
       disabled:S.assist.busy?"disabled":null,
-      text: S.assist.busy ? "Drafting\u2026"
-                          : "Draft the "+need+" missing description"+(need===1?"":"s"),
       onclick:()=> assistRun("alt", {ids: imgs.filter(e=> e.role==="Figure" &&
           !(e.alt||"").trim()).map(e=>e.id)}, j=>{
         absorb(j); render();
         say((j.drafted||0)+" description"+((j.drafted||0)===1?"":"s")+
             " drafted. Read each one against its picture before you export.");
-      })}));
-    bar.appendChild(el("span",{class:"hint",style:"margin:0",
-      text:"Each one arrives as a draft, unread, and still counts as outstanding."}));
+      })});
+    if(S.assist.busy){
+      btn.appendChild(el("span",{class:"spin","aria-hidden":"true"}));
+      btn.appendChild(el("span",{text:"\u00a0Drafting\u2026"}));
+    }else{
+      btn.textContent = "Draft the "+need+" missing description"+(need===1?"":"s");
+    }
+    bar.appendChild(btn);
+    bar.appendChild(el("p",{class:"note",
+      text:"Each one arrives as a draft, unread, and still counts as outstanding. "+
+           "Only the image itself is sent, never the rest of the page."}));
+    if(S.assist.busy) bar.appendChild(progressBar(need));
     v.appendChild(bar);
   }
 
@@ -2200,6 +2298,31 @@ function renderHelpToggle(){
   document.getElementById("helptoglabel").textContent =
     S.help ? "Help tips on" : "Help tips off";
 }
+/* The Claude switch lives beside Help tips because it is the same kind of thing:
+   a session-wide preference, not a step in the flow. It stays hidden until
+   detection has actually found a route, so it never offers something that would
+   fail the moment it was used. */
+function renderClaudeToggle(){
+  const b = document.getElementById("claudetog");
+  if(!b) return;
+  b.hidden = !S.assist.route;
+  b.setAttribute("aria-checked", String(S.assist.on));
+  b.setAttribute("aria-label", S.assist.on
+    ? "Claude is on for this document. Turn it off to stop sending anything."
+    : "Claude is off. Turn it on to draft descriptions and check reading order.");
+  b.title = S.assist.label || "";
+  document.getElementById("claudetoglabel").textContent =
+    S.assist.on ? "Claude on" : "Claude off";
+}
+document.getElementById("claudetog").onclick = ()=>{
+  S.assist.on = !S.assist.on;
+  renderClaudeToggle();
+  render();
+  say(S.assist.on
+    ? "Claude on for this document. Nothing is sent until you ask for it."
+    : "Claude off. Nothing will be sent.");
+};
+
 document.getElementById("helptog").onclick = ()=>{
   S.help = !S.help;
   store("help", S.help);

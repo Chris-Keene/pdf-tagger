@@ -42,9 +42,9 @@ fi
 # Deliberately NOT LSUIElement: the UI lives in a browser tab, so without a Dock
 # icon a user who closes the tab has no way to stop the server short of Activity
 # Monitor.  A Dock icon gives them right-click - Quit as a reliable escape hatch.
-/usr/libexec/PlistBuddy -c "Set :CFBundleShortVersionString 1.19.0" "$APP/Contents/Info.plist" 2>/dev/null || true
-/usr/libexec/PlistBuddy -c "Add :CFBundleVersion string 1.19.0" "$APP/Contents/Info.plist" 2>/dev/null \
-  || /usr/libexec/PlistBuddy -c "Set :CFBundleVersion 1.19.0" "$APP/Contents/Info.plist" 2>/dev/null || true
+/usr/libexec/PlistBuddy -c "Set :CFBundleShortVersionString 1.20.0" "$APP/Contents/Info.plist" 2>/dev/null || true
+/usr/libexec/PlistBuddy -c "Add :CFBundleVersion string 1.20.0" "$APP/Contents/Info.plist" 2>/dev/null \
+  || /usr/libexec/PlistBuddy -c "Set :CFBundleVersion 1.20.0" "$APP/Contents/Info.plist" 2>/dev/null || true
 
 # Let a PDF be opened with this app (right-click - Open With, or dropped on the
 # Dock icon). Rank Alternate on purpose: hijacking the default PDF handler would

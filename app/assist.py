@@ -152,23 +152,78 @@ def _ask(prompt, model, images=(), files_dir=None):
 # --------------------------------------------------------------------------- #
 
 _ALT_RULES = (
-    "You are drafting alt text for one image taken from a PDF, for a screen "
-    "reader user.\n"
-    "Rules:\n"
+    "You are drafting alt text for one image cut out of a PDF page, for somebody "
+    "reading with a screen reader.\n\n"
+    "FIRST decide what the image is. Work down this list and stop at the first "
+    "that fits, because the order matters:\n\n"
+    "1. A LOGO or WORDMARK. A company or product name drawn as a stylised graphic "
+    "is a LOGO, not text, even when the image is nothing but the name. This is the "
+    "one most often got wrong: a wordmark looks like a word, so it gets "
+    "transcribed as if it were a screenshot. It is a logo. Answer with the "
+    "organisation's name and the word logo, for example 'Acme logo'. Leave out the "
+    "styling, the strapline and any tagline sitting beside it.\n"
+    "2. PURE DECORATION. A background shape, gradient, texture, divider, rule, "
+    "border, bullet glyph, a photograph sitting behind a title purely for looks, "
+    "or an icon that only repeats the words next to it. The test is simple: if the "
+    "image vanished, would the reader lose anything at all? If not, it is "
+    "decoration, and describing it is worse than skipping it because it interrupts "
+    "the page to say nothing. Be willing to call this: most decks are full of it.\n"
+    "3. A CHART, GRAPH or DIAGRAM. Give the kind of chart, what it measures, and "
+    "the point it is making, with the figures that carry that point.\n"
+    "4. A SCREENSHOT, or any image whose content is text. The words that matter "
+    "have to be in the description, because they exist nowhere else.\n"
+    "5. A PHOTOGRAPH or ILLUSTRATION that carries meaning. Say what is happening "
+    "and who is in it, as far as it bears on the surrounding text.\n\n"
+    "THEN write the description:\n"
     "- Say what a reader would miss if the image were not there.\n"
-    "- One sentence, under 25 words, no trailing full stop needed.\n"
-    "- Never start with 'image of', 'picture of', 'graphic showing' or the like.\n"
-    "- If the image is a screenshot containing text, the words that matter must "
-    "be in the description.\n"
-    "- If it is a logo, name the organisation and nothing else.\n"
-    "- If it carries no meaning at all and is purely decorative, reply with "
-    "exactly DECORATIVE.\n"
-    "Reply with the description alone and no preamble."
+    "- One sentence, under 25 words, no trailing full stop.\n"
+    "- Never open with 'image of', 'picture of', 'graphic showing' or similar: the "
+    "reader is already told it is an image.\n"
+    "- Describe only what you can actually see. Never infer a brand, a name, a "
+    "number or a date that is not in the image.\n\n"
+    "Reply in exactly these three lines and nothing else, no preamble:\n"
+    "KIND: logo | decoration | chart | screenshot | photo\n"
+    "ALT: the description, or the single word NONE when it is decoration\n"
+    "WHY: at most twelve words on why it is that kind"
 )
+
+# The reply is meant to be three labelled lines, but a model that ignores the
+# format usually still puts a usable answer on the last line, so both are read.
+_KINDS = ("logo", "decoration", "chart", "screenshot", "photo")
+
+
+def _parse_alt(out):
+    """(text, decorative, why) from a reply, however loosely it followed the shape."""
+    kind = alt = why = ""
+    for line in out.splitlines():
+        line = line.strip()
+        low = line.lower()
+        if low.startswith("kind:"):
+            kind = line[5:].strip().strip(".").lower()
+        elif low.startswith("alt:"):
+            alt = line[4:].strip()
+        elif low.startswith("why:"):
+            why = line[4:].strip()
+
+    if not kind and not alt:
+        # Unlabelled reply: fall back to the old shape, last real line, and the
+        # bare DECORATIVE that earlier versions of this prompt asked for.
+        lines = [l.strip() for l in out.splitlines() if l.strip()]
+        alt = lines[-1] if lines else ""
+        if alt.upper().startswith("DECORATIVE"):
+            return "", True, ""
+
+    alt = alt.strip().strip('"\u201c\u201d').strip()
+    decorative = kind.startswith("decorat") or alt.upper() in ("NONE", "DECORATIVE")
+    if decorative:
+        return "", True, why
+    if kind and kind not in _KINDS:
+        kind = ""
+    return alt, False, why
 
 
 def draft_alt(crop_path, context_text="", page_no=None):
-    """Draft one image description. Returns (text, decorative)."""
+    """Draft one image description. Returns (text, decorative, why)."""
     where = f" It appears on page {page_no}." if page_no else ""
     ctx = f"\n\nText near it on the page, for context only:\n{context_text[:600]}" \
         if context_text else ""
@@ -182,13 +237,7 @@ def draft_alt(crop_path, context_text="", page_no=None):
         with open(crop_path, "rb") as fh:
             data = base64.standard_b64encode(fh.read()).decode("ascii")
         out = _run_api(f"{_ALT_RULES}{where}{ctx}", [("image/png", data)])
-    # Take the last real line first, then strip the quoting: a reply that ignores
-    # the no-preamble rule usually puts the answer last, and often in quotes.
-    lines = [l.strip() for l in out.splitlines() if l.strip()]
-    out = (lines[-1] if lines else "").strip().strip('"\u201c\u201d').strip()
-    if out.upper().startswith("DECORATIVE"):
-        return "", True
-    return out, False
+    return _parse_alt(out)
 
 
 # --------------------------------------------------------------------------- #
