@@ -13,11 +13,15 @@ Covers five things:
 Exits non-zero if anything fails, so it can gate a build.
 """
 import argparse
+import base64
 import collections
 import glob
 import hashlib
+import html
+import io
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -567,10 +571,16 @@ def test_foreign_tagged():
 # --------------------------------------------------------------------------- #
 # 4. edge cases
 # --------------------------------------------------------------------------- #
+# Any embeddable TrueType will do: this is a fixture font, not the brand. The
+# last resort is the static brand face the guides are built from (BRAND_FONTS, as
+# in docs/make_docs.py), never a variable font.
+BRAND_FONTS = os.path.expanduser(os.environ.get(
+    "BRAND_FONTS",
+    "~/Documents/Sandbox/brand-fonts/atkinson-hyperlegible-next/static"))
 FONT = next((p for p in (
     "/System/Library/Fonts/Supplemental/Arial.ttf",
     "/System/Library/Fonts/Supplemental/Verdana.ttf",
-    os.path.expanduser("~/Library/Fonts/Outfit-Regular.ttf"),
+    os.path.join(BRAND_FONTS, "AtkinsonHyperlegibleNext-Regular.ttf"),
 ) if os.path.exists(p)), None)
 
 
@@ -733,6 +743,122 @@ def test_font_reporting():
           ", ".join(clean.unembedded_fonts))
     check("and therefore raises no font issue",
           not [i for i in review(clean) if i["kind"] == "fonts"])
+
+
+# --------------------------------------------------------------------------- #
+# 4q. the brand font, in the UI and in the guides
+# --------------------------------------------------------------------------- #
+BRAND_FAMILY = "Atkinson Hyperlegible Next"
+# Comments may say where the old font went; a declaration may not use it.
+STALE_FONT = re.compile(r"(font-family|--font|font)\s*[:=][^;}>]*Outfit")
+
+
+def _font_faces_in(page):
+    """(family, declared weight, format, bytes) for each @font-face data URI."""
+    out = []
+    for m in re.finditer(r"@font-face\{([^}]*)\}", page):
+        body = m.group(1)
+        fam = re.search(r"font-family:\s*'?([^;']+)'?", body)
+        wt = re.search(r"font-weight:\s*([\d ]+)", body)
+        src = re.search(r"url\(data:font/(\w+);base64,([A-Za-z0-9+/=]+)\)", body)
+        if fam and src:
+            out.append((fam.group(1).strip(), (wt.group(1).strip() if wt else "400"),
+                        src.group(1), base64.b64decode(src.group(2))))
+    return out
+
+
+def _weights_asked_for(page):
+    """Every numeric weight a stylesheet or inline SVG requests."""
+    css = " ".join(re.findall(r"<style>(.*?)</style>", page, flags=re.S))
+    css = re.sub(r"@font-face\{[^}]*\}", "", css)
+    found = set(re.findall(r"font-weight\s*:\s*(\d{3})", css))
+    found |= set(re.findall(r"\bfont\s*:\s*(\d{3})\s", css))
+    found |= set(re.findall(r'font-weight="(\d{3})"', page))
+    # Plain text is 400; h1-h6, b, strong and th default to 700.
+    return {int(w) for w in found} | {400, 700}
+
+
+def _drawn_text(page, skip_mono=True):
+    """The characters a reader actually sees, entities decoded. Code, kbd and pre
+    are set in Menlo, so they are judged against that rather than the brand face."""
+    t = re.sub(r"<(style|script)\b.*?</\1>", "", page, flags=re.S)
+    if skip_mono:
+        t = re.sub(r"<(code|kbd|pre)\b[^>]*>.*?</\1>", "", t, flags=re.S)
+    t = re.sub(r"<[^>]+>", "", t)
+    return set(html.unescape(t))
+
+
+def test_brand_font():
+    section("4q. The brand font travels with the UI and the guides")
+    ui = open(os.path.join(ROOT, "app", "ui", "index.html"), encoding="utf-8").read()
+    faces = _font_faces_in(ui)
+    mine = [f for f in faces if f[0] == BRAND_FAMILY]
+    stack = re.search(r"--font\s*:\s*([^;]+);", ui)
+    first = stack.group(1).split(",")[0].strip().strip("'\"") if stack else ""
+    check("the UI names the brand font first", first == BRAND_FAMILY, first)
+    # Up to 1.20.0 the stack named a font and relied on it being installed, so it
+    # looked right on the machine that built it and nowhere else.
+    check("and carries it, rather than hoping it is installed",
+          len(mine) == 1 and mine[0][2] == "woff2",
+          f"{len(mine)} face(s), {mine[0][2] if mine else 'none'}")
+    asked = _weights_asked_for(ui)
+    check("nothing in the UI asks for a weight the font lacks (it stops at 800)",
+          asked and max(asked) <= 800 and min(asked) >= 200, sorted(asked))
+    check("no font stack still names the old font", not STALE_FONT.search(ui))
+
+    guides = [os.path.join(ROOT, "docs", n) for n in
+              ("installing-pdf-tagger.html", "how-pdf-tagger-works.html")]
+    for g in guides:
+        page = open(g, encoding="utf-8").read()
+        name = os.path.basename(g)
+        gf = [f for f in _font_faces_in(page) if f[0] == BRAND_FAMILY]
+        weights = {int(f[1]) for f in gf}
+        need = _weights_asked_for(page)
+        check(f"{name}: one embedded face for every weight it uses",
+              need <= weights, f"uses {sorted(need)}, embeds {sorted(weights)}")
+        check(f"{name}: the faces are TrueType, ready for Chrome to subset",
+              gf and all(f[2] == "ttf" for f in gf), ",".join(f[2] for f in gf))
+        check(f"{name}: no font stack still names the old font",
+              not STALE_FONT.search(page))
+
+    try:
+        from fontTools.ttLib import TTFont
+    except ImportError:
+        skip("brand font contents", "fontTools not installed (pip install fonttools brotli)")
+        return
+
+    if mine:
+        f = TTFont(io.BytesIO(mine[0][3]))
+        fam = f["name"].getDebugName(16) or f["name"].getDebugName(1)
+        check("the UI's embedded font really is the brand font", fam == BRAND_FAMILY, fam)
+        axis = {a.axisTag: (a.minValue, a.maxValue) for a in f["fvar"].axes} \
+            if "fvar" in f else {}
+        lo, hi = axis.get("wght", (400, 400))
+        check("its weight axis covers every weight the UI asks for",
+              all(lo <= w <= hi for w in asked), f"axis {lo:g}-{hi:g}")
+
+    for g in guides:
+        page = open(g, encoding="utf-8").read()
+        name = os.path.basename(g)
+        gf = [TTFont(io.BytesIO(f[3])) for f in _font_faces_in(page)
+              if f[0] == BRAND_FAMILY]
+        if not gf:
+            check(f"{name}: brand faces found", False)
+            continue
+        # A variable font comes out of Chrome's PDF export as Type3 with a
+        # mostly-zero /Widths array, and the text extracts as garbage.
+        check(f"{name}: every embedded face is static, never variable",
+              not any("fvar" in f for f in gf))
+        names = {f["name"].getDebugName(16) or f["name"].getDebugName(1) for f in gf}
+        check(f"{name}: and every face is the brand font", names == {BRAND_FAMILY},
+              ", ".join(sorted(n or "?" for n in names)))
+        # A character the face lacks is filled from a system font at export, and
+        # some of those arrive as Type3. This is what an arrow or a tick does.
+        cmap = set.intersection(*(set(f.getBestCmap()) for f in gf))
+        missing = sorted(c for c in _drawn_text(page)
+                         if ord(c) > 126 and ord(c) not in cmap)
+        check(f"{name}: every character it draws is in the brand font", not missing,
+              " ".join(f"{c} U+{ord(c):04X}" for c in missing))
 
 
 def make_form_xobject_pdf():
@@ -3179,7 +3305,7 @@ def main():
     ap.add_argument("--quick", action="store_true", help="fewer corpus files")
     ap.add_argument("--no-verapdf", action="store_true")
     ap.add_argument("--only", default="",
-                    help="comma-separated: corpus,trip,foreign,edge,fonts,nested,"
+                    help="comma-separated: corpus,trip,foreign,edge,fonts,brand,nested,"
                          "checks,conf,persist,errors,api,verapdf,native,shared,tables,edits,detect,layout")
     ap.add_argument("--native-ui", action="store_true",
                     help="include the native window checks (opens a window briefly)")
@@ -3194,6 +3320,7 @@ def main():
             ("foreign", test_foreign_tagged),
             ("edge", test_edge_cases),
             ("fonts", test_font_reporting),
+            ("brand", test_brand_font),
             ("nested", test_form_xobjects),
             ("shared", test_shared_forms),
             ("tables", test_tables),

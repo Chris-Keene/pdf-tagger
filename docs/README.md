@@ -30,8 +30,15 @@ Chrome's print-to-PDF drops most accessibility work unless the HTML is written f
 
 - **Static font faces, one per weight.** Chrome cannot subset an instance of a variable
   font and falls back to Type3 glyph procedures with a mostly-zero `/Widths` array. It
-  looks fine and extracts as garbage. Needs the static Outfit faces installed in
-  `~/Library/Fonts` (not the variable font).
+  looks fine and extracts as garbage. Needs the static Atkinson Hyperlegible Next faces
+  (Regular, SemiBold, Bold), read from `$BRAND_FONTS`, which defaults to
+  `~/Documents/Sandbox/brand-fonts/atkinson-hyperlegible-next/static`; point it at any
+  folder holding those three TTFs. `make_docs.py` refuses a variable file.
+- **Only characters the font has.** Atkinson Hyperlegible Next has no arrows or ticks
+  (→ ← ✓). Chrome fills a missing glyph from a system font at export, and some of those
+  arrive as Type3. Write "then" or "to" instead. `<code>` and `<kbd>` are set in Menlo,
+  which does have ⌘. `tests/run_tests.py --only brand` checks every character the
+  guides draw against the embedded faces.
 - **Real elements.** A `div` styled to look like a heading exports as a paragraph. Same
   for lists and tables.
 - **Nothing load-bearing hidden.** `aria-hidden`, `sr-only` and off-screen positioning

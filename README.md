@@ -410,6 +410,11 @@ Two things worth recording:
 - **The header logo is embedded as a WebP data URI**, because the UI is a single
   self-contained file with no network access. It is downscaled to the 22px it
   displays at and embedded at 3x for high-DPI, 7.2KB.
+- **The font is embedded the same way**: Atkinson Hyperlegible Next as one variable
+  woff2 (weights 200 to 800), 64KB as base64. Up to 1.20.0 the UI named Outfit and
+  relied on it being installed, so it only looked right on the machine that built
+  it. Never ask for weight 900. The PDF guides use static faces instead, one per
+  weight; see `docs/README.md`. `tests/run_tests.py --only brand` guards both.
 - **Grid tracks are all `minmax(0, …)`.** A bare `1fr` is `minmax(auto, 1fr)`,
   whose auto minimum is min-content, so the wide page rail pushed its column past
   the window and the panel overflowed sideways below about 1000px.

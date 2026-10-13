@@ -12,7 +12,12 @@ survive Chrome's print-to-PDF with its accessibility intact:
   * static font faces, one per weight, embedded as data URIs. Chrome cannot subset
     an instance of a variable font and falls back to Type3 glyph procedures with a
     mostly-zero /Widths array, which garbles every tool that reconstructs reading
-    order from glyph advances.
+    order from glyph advances. font_faces() refuses a variable file outright.
+  * only characters the embedded font actually has. Atkinson Hyperlegible Next has
+    no arrows or ticks, and Chrome fills a missing glyph from whatever system font
+    it finds, which can arrive as a Type3 face. So the copy says "then" and "to"
+    where it used to draw an arrow. ⌘ is fine: it only appears inside <kbd>, which
+    is set in Menlo, and Menlo has it.
   * real h1/h2/h3, ul/li, table/th/caption. A div styled to look like a heading
     exports as a paragraph.
   * nothing load-bearing inside aria-hidden or positioned off-screen.
@@ -27,15 +32,34 @@ Usage:  python3 docs/make_docs.py          # writes both .html next to this file
 import base64
 import os
 import pathlib
+import struct
 
 HERE = pathlib.Path(__file__).resolve().parent
-FONT_DIR = pathlib.Path.home() / "Library" / "Fonts"
-FACES = [("Outfit-Regular.ttf", 400), ("Outfit-SemiBold.ttf", 600),
-         ("Outfit-Bold.ttf", 700)]
 
-VERSION = "1.20.0"
+# Atkinson Hyperlegible Next, one static TTF per weight. Read from the brand-fonts
+# folder rather than ~/Library/Fonts, so building the guides does not depend on
+# what happens to be installed. Point BRAND_FONTS at any folder holding these
+# three files.
+FAMILY = "Atkinson Hyperlegible Next"
+FONT_DIR = pathlib.Path(os.environ.get(
+    "BRAND_FONTS",
+    "~/Documents/Sandbox/brand-fonts/atkinson-hyperlegible-next/static")).expanduser()
+# The weights the stylesheet below asks for. A weight with no face of its own is
+# synthesised by Chrome, which looks wrong on screen and worse in print.
+FACES = [("AtkinsonHyperlegibleNext-Regular.ttf", 400),
+         ("AtkinsonHyperlegibleNext-SemiBold.ttf", 600),
+         ("AtkinsonHyperlegibleNext-Bold.ttf", 700)]
+
+VERSION = "1.21.0"
 ZIP_NAME = f"PDF-Tagger-{VERSION}.zip"
 ZIP_SIZE = "89MB"
+
+
+def _is_variable(data):
+    """True if an sfnt carries an fvar table, i.e. is a variable font."""
+    num_tables = struct.unpack(">H", data[4:6])[0]
+    tags = {data[12 + 16 * i:16 + 16 * i] for i in range(num_tables)}
+    return b"fvar" in tags
 
 
 def font_faces():
@@ -44,13 +68,18 @@ def font_faces():
         path = FONT_DIR / name
         if not path.exists():
             raise SystemExit(
-                f"missing {path}. Install the static Outfit faces (not the "
-                f"variable font) before building.")
-        b64 = base64.b64encode(path.read_bytes()).decode("ascii")
+                f"missing {path}. Set BRAND_FONTS to a folder holding the static "
+                f"{FAMILY} faces (not the variable font) before building.")
+        data = path.read_bytes()
+        if _is_variable(data):
+            raise SystemExit(
+                f"{path} is a variable font. Chrome exports those as Type3 with "
+                f"broken widths; use the static instance for weight {weight}.")
+        b64 = base64.b64encode(data).decode("ascii")
         out.append(
-            "@font-face{font-family:Outfit;font-style:normal;font-weight:%d;"
+            "@font-face{font-family:'%s';font-style:normal;font-weight:%d;"
             "font-display:block;src:url(data:font/ttf;base64,%s) format('truetype')}"
-            % (weight, b64))
+            % (FAMILY, weight, b64))
     return "\n".join(out)
 
 
@@ -60,7 +89,8 @@ def font_faces():
 
 CSS = """
 :root{
-  /* chriskeene.me: deep sky blue (Capri) on white, Outfit throughout. Values are
+  /* chriskeene.me: deep sky blue (Capri) on white, Atkinson Hyperlegible Next
+     throughout, the brand face since 13 Oct 2026. Values are
      lifted from the site rather than re-derived so the two cannot drift.
      --accent is the brand hue and is used for rules, strips and fills under dark
      text only: white on it is 2.12:1. --accent-ink is the text-safe variant at
@@ -70,27 +100,28 @@ CSS = """
   --pink:#C6106E; --pink-ink:#C6106E; --link:#006699;
   --line:#CDE7F7; --white:#FFFFFF;
   --ok:#1E7A45; --todo:#8A5A00;
+  --font:'Atkinson Hyperlegible Next',"Helvetica Neue",Arial,sans-serif;
 }
 *{box-sizing:border-box}
 html{-webkit-text-size-adjust:100%}
 body{margin:0;background:var(--white);color:var(--ink);
-  font:400 10.5pt/1.55 Outfit,"Helvetica Neue",Arial,sans-serif}
+  font:400 10.5pt/1.55 var(--font)}
 code,kbd{font-family:Menlo,Consolas,"DejaVu Sans Mono",monospace;font-size:.92em}
 
 /* ---- page furniture ---- */
 .sheet{max-width:170mm;margin:0 auto;padding:14mm 0 10mm}
 .strip{height:3mm;background:var(--accent);border-radius:2px;
   margin:0 0 6mm}
-.eyebrow{font:600 8pt/1.3 Outfit,sans-serif;letter-spacing:.09em;
+.eyebrow{font:600 8pt/1.3 var(--font);letter-spacing:.09em;
   text-transform:uppercase;color:var(--navy);margin:0 0 2mm}
-h1{font:700 25pt/1.15 Outfit,sans-serif;color:var(--navy);margin:0 0 4mm;
+h1{font:700 25pt/1.15 var(--font);color:var(--navy);margin:0 0 4mm;
   letter-spacing:-.01em}
 .lede{font-size:11.5pt;color:var(--ink);margin:0 0 6mm;max-width:150mm}
-h2{font:700 14pt/1.25 Outfit,sans-serif;color:var(--navy);
+h2{font:700 14pt/1.25 var(--font);color:var(--navy);
   margin:0 0 3mm;display:flex;align-items:baseline;gap:3mm}
-h2 .n{font:700 9pt/1 Outfit,sans-serif;color:var(--white);background:var(--navy);
+h2 .n{font:700 9pt/1 var(--font);color:var(--white);background:var(--navy);
   border-radius:3px;padding:1.4mm 2mm;letter-spacing:.06em;flex:none}
-h3{font:600 11pt/1.3 Outfit,sans-serif;color:var(--navy);margin:5mm 0 2mm}
+h3{font:600 11pt/1.3 var(--font);color:var(--navy);margin:5mm 0 2mm}
 p{margin:0 0 3mm;max-width:150mm}
 strong{font-weight:600}
 a{color:var(--link)}
@@ -111,7 +142,7 @@ h3{break-after:avoid}
   border-radius:5px;overflow:hidden;margin:0 0 7mm}
 .facts div{flex:1 1 40mm;padding:3mm 4mm;border-right:1px solid var(--line)}
 .facts div:last-child{border-right:0}
-.facts b{display:block;font:600 8pt/1.3 Outfit,sans-serif;color:var(--muted);
+.facts b{display:block;font:600 8pt/1.3 var(--font);color:var(--muted);
   letter-spacing:.07em;text-transform:uppercase;margin-bottom:.8mm}
 .facts span{font-size:10pt;color:var(--navy);font-weight:600}
 
@@ -129,13 +160,13 @@ ol.steps>li{counter-increment:s;position:relative;padding:0 0 3.5mm 11mm;
   break-inside:avoid}
 ol.steps>li::before{content:counter(s);position:absolute;left:0;top:0;
   width:7mm;height:7mm;border-radius:50%;background:var(--navy);color:var(--white);
-  font:700 9pt/7mm Outfit,sans-serif;text-align:center}
+  font:700 9pt/7mm var(--font);text-align:center}
 ol.steps b{display:block;font-weight:600;color:var(--navy)}
 
 /* ---- tables ---- */
 .tablewrap{margin:0 0 5mm}
 table{border-collapse:collapse;width:100%;font-size:9.5pt}
-caption{text-align:left;font:600 9pt/1.4 Outfit,sans-serif;color:var(--muted);
+caption{text-align:left;font:600 9pt/1.4 var(--font);color:var(--muted);
   padding:0 0 1.5mm;letter-spacing:.04em;text-transform:uppercase}
 th,td{border:1px solid var(--line);padding:2.2mm 2.6mm;text-align:left;
   vertical-align:top}
@@ -146,7 +177,7 @@ thead{display:table-header-group}
 tr{break-inside:avoid}
 
 /* ---- chips ---- */
-.chip{display:inline-block;font:600 8pt/1 Outfit,sans-serif;padding:1.4mm 2.2mm;
+.chip{display:inline-block;font:600 8pt/1 var(--font);padding:1.4mm 2.2mm;
   border-radius:3px;letter-spacing:.05em;text-transform:uppercase;white-space:nowrap}
 .chip.ok{background:#D9F0E3;color:#125C32}
 .chip.todo{background:#FBEEd7;color:#6E4700}
@@ -224,8 +255,9 @@ INSTALL_BODY = f"""
   <h3>What you need</h3>
   <p>A Mac with Apple silicon &mdash; an M1 or later, so anything bought since roughly
      2021. Nothing else to install, no sign-in, and it works offline. On an older Intel
-     Mac this build will not open at all: check <strong>Apple menu &rarr; About This
-     Mac</strong>, and if it says Intel, ask for a build that suits.</p>
+     Mac this build will not open at all: open the Apple menu and choose
+     <strong>About This Mac</strong>, and if it says Intel, ask for a build that
+     suits.</p>
 </div>
 </section>
 
@@ -265,8 +297,8 @@ INSTALL_BODY = f"""
    window. Each one explains itself as you go.</p>
 <ul>
   <li><strong>Open a PDF.</strong> Drop one onto the window, or click
-      <strong>Choose a PDF</strong>. You can also right-click any PDF in Finder and pick
-      <strong>Open With &rarr; PDF Tagger</strong>.</li>
+      <strong>Choose a PDF</strong>. You can also right-click any PDF in Finder, choose
+      <strong>Open With</strong>, then <strong>PDF Tagger</strong>.</li>
   <li><strong>Leave &ldquo;Help tips on&rdquo;</strong> while you are learning. When the
       explanations start getting in the way, switch them off with the button in the top
       right.</li>
@@ -350,8 +382,8 @@ INSTALL_BODY = f"""
   <li><strong>Everyone will hit the Gatekeeper warning.</strong> The app is ad-hoc
       signed rather than signed with a Developer ID. Verified: a received copy picks up
       the quarantine flag and <code>spctl</code> rejects it.</li>
-  <li><strong>On macOS 15 the Control-click &rarr; Open shortcut no longer works</strong>
-      for this, which is why the instructions above use System Settings. Sending people
+  <li><strong>On macOS 15 the old shortcut, Control-click then Open, no longer
+      works</strong> for this, which is why the instructions above use System Settings. Sending people
       the old right-click trick will fail at the first step.</li>
   <li><strong>To remove the friction entirely</strong> the app needs a Developer ID and
       notarisation: an Apple Developer account at roughly &pound;79 a year, then signing
@@ -426,7 +458,7 @@ it.">
     <path d="M398,148 L446,102" marker-end="url(#ar)"/>
     <path d="M446,94 L492,94" marker-end="url(#ar)"/>
   </g>
-  <g font-family="Outfit, sans-serif" fill="currentColor">
+  <g font-family="'Atkinson Hyperlegible Next', sans-serif" fill="currentColor">
     <text x="49" y="90" font-size="12" font-weight="600" text-anchor="middle">PDF</text>
     <text x="49" y="105" font-size="12" font-weight="600" text-anchor="middle">page</text>
     <text x="145" y="52" font-size="10" text-anchor="middle">parse</text>
@@ -673,7 +705,7 @@ WORKS_BODY = f"""
         <td>Tag, re-open, tag again &mdash; content streams match exactly</td></tr>
     <tr><th>Review load</th><td>9%</td>
         <td>Share of text items the app asks about, across the corpus</td></tr>
-    <tr><th>Heading share</th><td>74% &rarr; 24%</td>
+    <tr><th>Heading share</th><td>74% to 24%</td>
         <td>Proportion of text tagged as a heading on a real customer deck</td></tr>
     <tr><th>Automated checks</th><td>347</td>
         <td>Thirteen groups, exits non-zero, includes adversarial and edge cases</td></tr>
