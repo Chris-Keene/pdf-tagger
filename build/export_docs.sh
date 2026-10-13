@@ -28,5 +28,5 @@ build_one () {
 }
 
 ./.venv/bin/python docs/make_docs.py
-build_one docs/installing-pdf-tagger.html dist/Installing-PDF-Tagger.pdf "Install guide"
-build_one docs/how-pdf-tagger-works.html  dist/How-PDF-Tagger-Works.pdf  "Engineering handover"
+build_one docs/installing-trellis.html dist/Installing-Trellis.pdf "Install guide"
+build_one docs/how-trellis-works.html     dist/How-Trellis-Works.pdf     "Engineering handover"

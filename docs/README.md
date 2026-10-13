@@ -4,8 +4,8 @@ The two PDFs in `dist/` are built from the HTML in this folder:
 
 | Source | Output |
 |---|---|
-| `installing-pdf-tagger.html` | `dist/Installing-PDF-Tagger.pdf` |
-| `how-pdf-tagger-works.html` | `dist/How-PDF-Tagger-Works.pdf` |
+| `installing-trellis.html` | `dist/Installing-Trellis.pdf` |
+| `how-trellis-works.html` | `dist/How-Trellis-Works.pdf` |
 
 Both HTML files are **generated** by `make_docs.py`, which holds the content and a
 shared chassis so the two documents cannot drift apart. Edit the Python, not the HTML.

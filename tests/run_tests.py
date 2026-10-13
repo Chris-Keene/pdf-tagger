@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Test suite for PDF Tagger.
+"""Test suite for Trellis (formerly PDF Tagger).
 
 Run:  ./.venv/bin/python tests/run_tests.py [--quick] [--no-verapdf]
 
@@ -42,14 +42,16 @@ from app.tagger import build
 from app import edits
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-TMP = tempfile.mkdtemp(prefix="pdftagger-tests-")
+TMP = tempfile.mkdtemp(prefix="trellis-tests-")
 USE_VERAPDF = True
 
 
 # Real-world PDFs the suite checks itself against. The synthetic fixtures prove
 # the logic; the corpus proves it against documents nobody designed for us, and
 # those files are not ours to ship. Settings come from tests/corpus.json or from
-# PDFTAG_CORPUS_<NAME>, and anything unset simply skips the checks that need it.
+# TRELLIS_CORPUS_<NAME>, and anything unset simply skips the checks that need it.
+# PDFTAG_CORPUS_<NAME>, from before the rename, is still read so an existing
+# shell setup keeps working.
 def _corpus_conf():
     try:
         with open(os.path.join(os.path.dirname(__file__), "corpus.json")) as fh:
@@ -58,15 +60,20 @@ def _corpus_conf():
         return {}
 
 
+def _corpus_env(name):
+    return (os.environ.get("TRELLIS_CORPUS_" + name)
+            or os.environ.get("PDFTAG_CORPUS_" + name))
+
+
 def corpus(name, default=""):
     """One named file, or the empty string when there isn't one to hand."""
-    val = os.environ.get("PDFTAG_CORPUS_" + name) or _corpus_conf().get(name) or default
+    val = _corpus_env(name) or _corpus_conf().get(name) or default
     return os.path.expanduser(val) if val else ""
 
 
 def corpus_list(name, default=()):
     """Glob patterns naming real files; os.pathsep-separated in the environment."""
-    env = os.environ.get("PDFTAG_CORPUS_" + name)
+    env = _corpus_env(name)
     pats = env.split(os.pathsep) if env else _corpus_conf().get(name, default)
     if isinstance(pats, str):
         pats = [pats]
@@ -807,7 +814,7 @@ def test_brand_font():
     check("no font stack still names the old font", not STALE_FONT.search(ui))
 
     guides = [os.path.join(ROOT, "docs", n) for n in
-              ("installing-pdf-tagger.html", "how-pdf-tagger-works.html")]
+              ("installing-trellis.html", "how-trellis-works.html")]
     for g in guides:
         page = open(g, encoding="utf-8").read()
         name = os.path.basename(g)
@@ -2968,6 +2975,99 @@ def test_decisions_persist():
                   "no headings proposed")
 
 
+# --------------------------------------------------------------------------- #
+# 8c. our own files, from either side of the rename
+# --------------------------------------------------------------------------- #
+def _with_xmp(src, out, xmp):
+    """A copy of src with its XMP packet replaced, as another writer would leave it."""
+    with pikepdf.open(src) as pdf:
+        if xmp is None:
+            if "/Metadata" in pdf.Root:
+                del pdf.Root["/Metadata"]
+        else:
+            pdf.Root.Metadata = pdf.make_stream(xmp.encode("utf-8"))
+            pdf.Root.Metadata[pikepdf.Name.Type] = pikepdf.Name.Metadata
+            pdf.Root.Metadata[pikepdf.Name.Subtype] = pikepdf.Name.XML
+        # Saved as written: pikepdf would otherwise try to "fix" a deliberately
+        # malformed packet and log a traceback about it.
+        pdf.save(out, fix_metadata_version=False)
+    return out
+
+
+def test_provenance():
+    section("8c. Our own files are recognised, before and after the rename")
+    from app.analyse import tagged_by_this_app, OUR_CREATOR_TOOLS
+    from app.hardening import XMP
+
+    src = fixture("slides-6page.pdf")
+    m = normalise_headings(analyse(src))
+    for p in m.pages:
+        for e in p.elements:
+            if e.role == "Figure":
+                e.alt = "A chart of scan results"
+    ours_new = os.path.join(TMP, "prov-trellis.pdf")
+    build(m, ours_new)
+
+    def recognised(path):
+        with pikepdf.open(path) as pdf:
+            return tagged_by_this_app(pdf)
+
+    xmp_now = XMP.format(title="Quarterly review", lang="en-GB")
+    check("new output says Trellis in its CreatorTool",
+          "<xmp:CreatorTool>Trellis</xmp:CreatorTool>" in xmp_now)
+    check("a file Trellis tagged is recognised as ours", recognised(ours_new))
+    m_new = normalise_headings(analyse(ours_new))
+    check("and its roles are adopted as settled",
+          m_new.adopted_ours and m_new.adopted > 0
+          and all(e.reviewed for p in m_new.pages for e in p.elements
+                  if e.role != "Artifact"),
+          f"ours={m_new.adopted_ours} adopted={m_new.adopted}")
+
+    # Exactly what 1.21.0 and earlier wrote, so files people already tagged keep
+    # their decisions when they open them in the renamed app.
+    xmp_old = xmp_now.replace("<xmp:CreatorTool>Trellis</xmp:CreatorTool>",
+                              "<xmp:CreatorTool>PDF Tagger</xmp:CreatorTool>")
+    ours_old = _with_xmp(ours_new, os.path.join(TMP, "prov-pdftagger.pdf"), xmp_old)
+    check("a file PDF Tagger tagged is still recognised as ours", recognised(ours_old))
+    m_old = normalise_headings(analyse(ours_old))
+    check("and its roles are still adopted as settled",
+          m_old.adopted_ours and m_old.adopted == m_new.adopted,
+          f"ours={m_old.adopted_ours} adopted={m_old.adopted}")
+    check("so it re-opens with nothing left to check",
+          summary(m_old)["to_check"] == 0, f"{summary(m_old)['to_check']} left")
+
+    # XMP may carry the value as an attribute, under the older "xap" prefix.
+    attr = ('<x:xmpmeta xmlns:x="adobe:ns:meta/"><rdf:RDF '
+            'xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#">'
+            '<rdf:Description rdf:about="" xmlns:xap="http://ns.adobe.com/xap/1.0/" '
+            'xap:CreatorTool="PDF Tagger"/></rdf:RDF></x:xmpmeta>')
+    check("the attribute form, under any prefix, is recognised too",
+          recognised(_with_xmp(ours_new, os.path.join(TMP, "prov-attr.pdf"), attr)))
+
+    # Negative cases. Each name appears in the metadata, but not as the tool
+    # that wrote the file. The first is what the old substring test got wrong:
+    # the app's own install guide, exported by Chrome, counted as ours.
+    def foreign(title, tool):
+        return xmp_now.replace("Quarterly review", title).replace(
+            "<xmp:CreatorTool>Trellis</xmp:CreatorTool>",
+            f"<xmp:CreatorTool>{tool}</xmp:CreatorTool>")
+    cases = [
+        ("a title that names the old app", foreign("Installing PDF Tagger", "Chromium")),
+        ("a title that names the new app", foreign("How Trellis Works", "Skia/PDF m155")),
+        ("another producer whose name contains Trellis",
+         foreign("Quarterly review", "Trellis Print Server 4.2")),
+        ("another producer whose name contains PDF Tagger",
+         foreign("Quarterly review", "Acme PDF Tagger Pro")),
+        ("metadata that is not well-formed", "<x:xmpmeta><rdf:RDF>PDF Tagger Trellis"),
+        ("no metadata at all", None),
+    ]
+    for i, (label, xmp) in enumerate(cases):
+        path = _with_xmp(ours_new, os.path.join(TMP, f"prov-neg-{i}.pdf"), xmp)
+        check(f"not claimed: {label}", not recognised(path))
+    check("only the two names this app has ever written count",
+          OUR_CREATOR_TOOLS == {"Trellis", "PDF Tagger"}, sorted(OUR_CREATOR_TOOLS))
+
+
 def test_error_messages():
     section("7. Failure messages a person can act on")
     from app.server import friendly_open_error
@@ -3014,7 +3114,7 @@ def test_error_messages():
 NATIVE_PROBE = '''
 import sys, threading
 sys.path.insert(0, %(root)r)
-from AppKit import NSApp, NSObject
+from AppKit import NSApp, NSObject, NSScreen
 from Foundation import NSTimer
 import app.native as nat
 import app.server as srv
@@ -3027,11 +3127,22 @@ class Probe(NSObject):
         try:
             w, wv = nat._state["window"], nat._state["webview"]
             emit("a real window is created", w is not None)
-            emit("titled with the app name", w and str(w.title()) == "PDF Tagger")
+            emit("titled with the app name", w and str(w.title()) == "Trellis")
             emit("visible on screen", bool(w and w.isVisible()))
             emit("minimum size is set", w and int(w.minSize().width) == 760)
-            emit("position is remembered between launches",
-                 w and str(w.frameAutosaveName()) == "PDFTaggerMainWindow")
+            # native.py opens the window filling the screen every time, and
+            # deliberately keeps no autosaved frame or restorable state, because a
+            # remembered size is restored after setFrame and silently wins.
+            vis = NSScreen.mainScreen().visibleFrame()
+            fr = w.frame() if w else None
+            emit("opens filling the screen, not at a remembered size",
+                 fr is not None
+                 and abs(fr.size.width - vis.size.width) <= 1
+                 and abs(fr.size.height - vis.size.height) <= 1,
+                 f"{int(fr.size.width)}x{int(fr.size.height)} in "
+                 f"{int(vis.size.width)}x{int(vis.size.height)}" if fr else "")
+            emit("keeps no autosaved frame or restorable state",
+                 w and str(w.frameAutosaveName() or "") == "" and not w.isRestorable())
             emit("content is a WKWebView", wv is not None and "WKWebView" in wv.className())
             emit("the app UI is loaded in it", "127.0.0.1" in str(wv.URL() or ""))
             bar = NSApp().mainMenu()
@@ -3206,7 +3317,7 @@ def test_api():
                                   "Content-Type": "application/pdf"})
         ok = code == 200
         landed = json.loads(body).get("source", "") if ok else ""
-        check("a path-traversal filename is neutralised", ok and "pdftagger-" in landed,
+        check("a path-traversal filename is neutralised", ok and "trellis-" in landed,
               os.path.basename(landed))
         check("nothing was written outside the temp dir",
               not os.path.exists("/tmp/escape.pdf"))
@@ -3305,7 +3416,7 @@ def main():
     ap.add_argument("--quick", action="store_true", help="fewer corpus files")
     ap.add_argument("--no-verapdf", action="store_true")
     ap.add_argument("--only", default="",
-                    help="comma-separated: corpus,trip,foreign,edge,fonts,brand,nested,"
+                    help="comma-separated: corpus,trip,foreign,edge,fonts,brand,prov,nested,"
                          "checks,conf,persist,errors,api,verapdf,native,shared,tables,edits,detect,layout")
     ap.add_argument("--native-ui", action="store_true",
                     help="include the native window checks (opens a window briefly)")
@@ -3313,7 +3424,7 @@ def main():
     USE_VERAPDF = not a.no_verapdf
     only = {s.strip() for s in a.only.split(",") if s.strip()}
 
-    print(f"PDF Tagger test suite   (veraPDF: {'on' if USE_VERAPDF else 'off'}, "
+    print(f"Trellis test suite   (veraPDF: {'on' if USE_VERAPDF else 'off'}, "
           f"scratch: {TMP})")
     plan = [("corpus", lambda: test_corpus(limit=3 if a.quick else None)),
             ("trip", test_round_trip),
@@ -3341,6 +3452,7 @@ def main():
             ("checks", test_checks_layer),
             ("conf", test_confidence),
             ("persist", test_decisions_persist),
+            ("prov", test_provenance),
             ("errors", test_error_messages),
             ("api", test_api),
             ("verapdf", test_bundled_verapdf),

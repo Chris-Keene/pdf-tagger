@@ -12,6 +12,8 @@ The two are joined on position: a text object whose origin sits inside a line's
 box belongs to that line's element.
 """
 import re
+import xml.etree.ElementTree as ET
+
 import pikepdf
 import pymupdf
 
@@ -648,6 +650,37 @@ def mcids_of_page(page):
     return out
 
 
+# The XMP CreatorTool this app has written. "Trellis" from 1.22.0; files tagged
+# before the rename say "PDF Tagger" and are just as much our own work.
+OUR_CREATOR_TOOLS = frozenset({"Trellis", "PDF Tagger"})
+_XMP_NS = "http://ns.adobe.com/xap/1.0/"
+
+
+def creator_tools(xmp_bytes):
+    """Every xmp:CreatorTool value in an XMP packet.
+
+    Parsed rather than searched, and matched on the namespace rather than the
+    prefix: XMP allows the value as an element or as an attribute on
+    rdf:Description, and older writers bind the namespace to "xap:".
+    """
+    start = xmp_bytes.find(b"<x:xmpmeta")
+    if start < 0:
+        start = xmp_bytes.find(b"<rdf:RDF")
+    end = max(xmp_bytes.rfind(b"</x:xmpmeta>") + len(b"</x:xmpmeta>"),
+              xmp_bytes.rfind(b"</rdf:RDF>") + len(b"</rdf:RDF>"))
+    if start < 0 or end <= start:
+        return set()
+    root = ET.fromstring(xmp_bytes[start:end])
+    key = f"{{{_XMP_NS}}}CreatorTool"
+    found = set()
+    for el in root.iter():
+        if el.tag == key and (el.text or "").strip():
+            found.add(el.text.strip())
+        if key in el.attrib:
+            found.add(el.attrib[key].strip())
+    return found
+
+
 def tagged_by_this_app(pdf):
     """Did this app write the tags in this file?
 
@@ -655,13 +688,18 @@ def tagged_by_this_app(pdf):
     worked through the document, so re-asking them to confirm every item is just
     rude. Another tool's tags are still better evidence than a font-size guess,
     but nobody here has vouched for them.
+
+    Decided by the CreatorTool value alone. A substring search of the metadata
+    used to do this, and it claimed any file whose title merely mentioned the
+    app: the app's own install guide, exported by Chrome, counted as ours.
     """
     try:
         if "/Metadata" not in pdf.Root:
             return False
-        return b"PDF Tagger" in bytes(pdf.Root.Metadata.read_bytes())
+        tools = creator_tools(bytes(pdf.Root.Metadata.read_bytes()))
     except Exception:
         return False
+    return bool(tools & OUR_CREATOR_TOOLS)
 
 
 # Roles a foreign tool has demonstrably got right when it bothers to emit them:

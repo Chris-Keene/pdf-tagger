@@ -50,9 +50,28 @@ FACES = [("AtkinsonHyperlegibleNext-Regular.ttf", 400),
          ("AtkinsonHyperlegibleNext-SemiBold.ttf", 600),
          ("AtkinsonHyperlegibleNext-Bold.ttf", 700)]
 
-VERSION = "1.21.0"
-ZIP_NAME = f"PDF-Tagger-{VERSION}.zip"
+APP = "Trellis"
+VERSION = "1.22.0"
+ZIP_NAME = f"{APP}-{VERSION}.zip"
+REPO_URL = "https://github.com/Chris-Keene/trellis"
+SITE_URL = "https://chriskeene.me/trellis"
+
+# Measured from the 1.22.0 build, not estimated; re-measure at each release.
+# Sizes are binary megabytes (MiB), the unit these guides have always used.
+# Finder counts decimal MB and shows about 5% more (93.6 MB for this zip).
+#   ZIP_SIZE          the shipped zip, 93,597,946 bytes
+#   LITE_ZIP_SIZE     the zip from ./build/make_app.sh --no-verapdf, 46,119,834 bytes
+#                     (measured before the trellis icon, which added about 40KB)
+#   VERAPDF_ZIP       the difference between the two
+#   VERAPDF_UNZIPPED  du of build/verapdf, the CLI plus the trimmed runtime
+#   CHECKS / GROUPS   a full tests/run_tests.py run: the checks that ran and the
+#                     sections they ran in, without the optional real-deck corpus
 ZIP_SIZE = "89MB"
+LITE_ZIP_SIZE = "44MB"
+VERAPDF_ZIP = "45MB"
+VERAPDF_UNZIPPED = "63MB"
+CHECKS = 435
+GROUPS = 30
 
 
 def _is_variable(data):
@@ -150,7 +169,7 @@ h3{break-after:avoid}
 .note{background:var(--bg);border-left:3px solid var(--navy);
   border-radius:0 4px 4px 0;padding:3.5mm 4mm;margin:0 0 4mm;break-inside:avoid}
 .note h3{margin:0 0 1.5mm}
-.note p:last-child{margin-bottom:0}
+.note p:last-child,.note ul:last-child,.note li:last-child{margin-bottom:0}
 .warn{background:#FFFBF2;border-left-color:var(--todo)}
 .win{background:#F2FAF5;border-left-color:var(--ok)}
 
@@ -236,7 +255,7 @@ def page(title, eyebrow, h1, lede, facts, body, foot):
 
 
 # --------------------------------------------------------------------------- #
-# 1. Installing PDF Tagger  (for the person receiving the app)
+# 1. Installing Trellis  (for the person receiving the app)
 # --------------------------------------------------------------------------- #
 
 INSTALL_BODY = f"""
@@ -244,7 +263,7 @@ INSTALL_BODY = f"""
 <h2><span class="n">01</span>Install it</h2>
 <ol class="steps">
   <li><b>Unzip the file</b>Double-click <code>{ZIP_NAME}</code>. You will get an app
-      called PDF Tagger.</li>
+      called Trellis.</li>
   <li><b>Drag it into Applications</b>Not strictly required, but it is where you will
       look for it next week, and apps left in Downloads can behave oddly.</li>
   <li><b>Open it, and expect to be stopped once</b>The first double-click will be
@@ -259,18 +278,30 @@ INSTALL_BODY = f"""
      <strong>About This Mac</strong>, and if it says Intel, ask for a build that
      suits.</p>
 </div>
+<div class="note">
+  <h3>Upgrading from PDF Tagger</h3>
+  <p>Trellis is the new name for PDF Tagger. It installs as a separate app, so once
+     Trellis is in Applications, move PDF Tagger to the Bin.</p>
+  <ul>
+    <li><strong>Files you tagged with PDF Tagger</strong> open in Trellis with your
+        decisions intact, the same as before.</li>
+    <li><strong>macOS will stop it once</strong> on first launch, exactly as it did for
+        PDF Tagger, because to macOS it is a new app. Section 02 clears it.</li>
+    <li><strong>The log has moved</strong> to <code>~/Library/Logs/Trellis.log</code>.</li>
+  </ul>
+</div>
 </section>
 
 <section>
 <h2><span class="n">02</span>&ldquo;macOS cannot check it for malicious software&rdquo;</h2>
 <p>You will see this the first time you open the app, and only the first time.</p>
 <ol class="steps">
-  <li><b>Double-click PDF Tagger</b>A message appears saying macOS cannot verify it.
+  <li><b>Double-click Trellis</b>A message appears saying macOS cannot verify it.
       Click <strong>Done</strong> (or OK, or Cancel &mdash; whichever it offers).</li>
   <li><b>Open System Settings</b>The grey cog in your Dock, or press
       <kbd>&#8984;</kbd> + <kbd>Space</kbd> and type &ldquo;System Settings&rdquo;.</li>
   <li><b>Click Privacy &amp; Security</b>In the left-hand list.</li>
-  <li><b>Scroll down to Security</b>There will be a line saying &ldquo;PDF Tagger was
+  <li><b>Scroll down to Security</b>There will be a line saying &ldquo;Trellis was
       blocked to protect your Mac.&rdquo;</li>
   <li><b>Click Open Anyway</b>Then confirm with your password, Touch ID or Apple
       Watch.</li>
@@ -286,7 +317,7 @@ INSTALL_BODY = f"""
   <h3>Faster route, if you are comfortable with Terminal</h3>
   <p>This skips the whole panel above. Open Terminal, paste the line, press Return,
      then open the app normally.</p>
-  <pre>xattr -d -r com.apple.quarantine "/Applications/PDF Tagger.app"</pre>
+  <pre>xattr -d -r com.apple.quarantine "/Applications/Trellis.app"</pre>
   <p>If you put the app somewhere other than Applications, change the path to match.</p>
 </div>
 </section>
@@ -298,7 +329,7 @@ INSTALL_BODY = f"""
 <ul>
   <li><strong>Open a PDF.</strong> Drop one onto the window, or click
       <strong>Choose a PDF</strong>. You can also right-click any PDF in Finder, choose
-      <strong>Open With</strong>, then <strong>PDF Tagger</strong>.</li>
+      <strong>Open With</strong>, then <strong>Trellis</strong>.</li>
   <li><strong>Leave &ldquo;Help tips on&rdquo;</strong> while you are learning. When the
       explanations start getting in the way, switch them off with the button in the top
       right.</li>
@@ -365,7 +396,7 @@ INSTALL_BODY = f"""
         <td>Correct. Tagging has to rewrite the file and it comes out unprotected. The
             content is identical; re-apply the password to the copy if it matters.</td></tr>
     <tr><th>Anything else</th>
-        <td>There is a log at <code>~/Library/Logs/PDF&nbsp;Tagger.log</code>. Send that
+        <td>There is a log at <code>~/Library/Logs/Trellis.log</code>. Send that
             on with a note about what you were doing.</td></tr>
   </tbody>
 </table>
@@ -377,14 +408,19 @@ INSTALL_BODY = f"""
 <p class="eyebrow">For whoever is handing this out</p>
 <ul>
   <li><strong>Send <code>{ZIP_NAME}</code> ({ZIP_SIZE}).</strong> Zipped with
-      <code>ditto</code>, so the code signature survives the transfer. Slack, Drive and
-      email are all fine at that size.</li>
+      <code>ditto</code>, so the code signature survives the transfer. Slack and Drive
+      handle that size; most email will not, so send a link.</li>
+  <li><strong>Every release lives at
+      <a href="{REPO_URL}/releases">github.com/Chris-Keene/trellis/releases</a></strong>,
+      with the zip and both guides attached. Releases before 1.22.0 are named
+      PDF Tagger.</li>
   <li><strong>Everyone will hit the Gatekeeper warning.</strong> The app is ad-hoc
       signed rather than signed with a Developer ID. Verified: a received copy picks up
       the quarantine flag and <code>spctl</code> rejects it.</li>
   <li><strong>On macOS 15 the old shortcut, Control-click then Open, no longer
-      works</strong> for this, which is why the instructions above use System Settings. Sending people
-      the old right-click trick will fail at the first step.</li>
+      works</strong> for this, which is why the instructions above use System
+      Settings. Sending people the old right-click trick will fail at the first
+      step.</li>
   <li><strong>To remove the friction entirely</strong> the app needs a Developer ID and
       notarisation: an Apple Developer account at roughly &pound;79 a year, then signing
       and stapling the build. After that it opens with no warning and these instructions
@@ -396,9 +432,9 @@ INSTALL_BODY = f"""
   <li><strong>veraPDF is bundled</strong>, so recipients get the real conformance verdict
       without installing Java or Homebrew &mdash; the veraPDF CLI plus a
       <code>jlink</code>-trimmed OpenJDK runtime, verified to give a verdict identical to
-      a system install with no Java on the PATH. It accounts for 63MB of the download;
-      <code>--no-verapdf</code> builds a 45MB version that tags identically but shows no
-      pass or fail.</li>
+      a system install with no Java on the PATH. It adds {VERAPDF_ZIP} to the download
+      and {VERAPDF_UNZIPPED} once unzipped; <code>--no-verapdf</code> builds a
+      {LITE_ZIP_SIZE} zip that tags identically but shows no pass or fail.</li>
   <li><strong>Licensing for the redistributed parts:</strong> veraPDF is dual
       GPL-3.0-or-later / MPL-2.0, included under MPL-2.0 (file-level copyleft, nothing
       imposed on our source). The runtime is OpenJDK under GPLv2 with the Classpath
@@ -413,23 +449,25 @@ INSTALL_BODY = f"""
 """
 
 INSTALL = page(
-    title="Installing PDF Tagger",
-    eyebrow="chriskeene.me &middot; PDF Tagger",
-    h1="Installing PDF Tagger",
-    lede="Takes about a minute. There is one step where macOS will refuse to open the "
+    title="Installing Trellis",
+    eyebrow="chriskeene.me &middot; Trellis, formerly PDF Tagger",
+    h1="Installing Trellis",
+    lede="Trellis, formerly PDF Tagger, is an accessibility tagger for PDFs. Installing "
+         "it takes about a minute. There is one step where macOS will refuse to open the "
          "app &mdash; that is expected, and step 3 gets you past it for good.",
-    facts=[("Version", f"PDF Tagger {VERSION}"),
+    facts=[("Version", f"Trellis {VERSION}"),
            ("Needs", "macOS 12+, Apple silicon"),
            ("Download", f"{ZIP_NAME} &middot; {ZIP_SIZE}"),
            ("Network", "None. Works offline")],
     body=INSTALL_BODY,
-    foot=f"PDF Tagger {VERSION} &middot; macOS 12 or later, Apple silicon. Turns a PDF "
-         "with no accessibility structure into a tagged one, with you confirming the "
-         "parts a script cannot know.")
+    foot=f"Trellis {VERSION}, formerly PDF Tagger &middot; macOS 12 or later, Apple "
+         "silicon. Turns a PDF with no accessibility structure into a tagged one, with you "
+         "confirming the parts a script cannot know. "
+         f'More at <a href="{SITE_URL}">chriskeene.me/trellis</a>.')
 
 
 # --------------------------------------------------------------------------- #
-# 2. How PDF Tagger Works  (engineering handover)
+# 2. How Trellis Works  (engineering handover)
 # --------------------------------------------------------------------------- #
 
 JOIN_SVG = """
@@ -569,6 +607,10 @@ WORKS_BODY = f"""
      Without that, re-opening a file someone had already worked on threw their
      judgements away and asked for all of them again, which made confirming a proposal
      pointless.</p>
+  <p>The app knows its own files by the XMP <code>CreatorTool</code> it writes:
+     Trellis now, PDF Tagger before the rename. Only that field counts. A substring
+     search used to claim any file whose title mentioned the app, including its own
+     install guide.</p>
 </div>
 </section>
 
@@ -707,8 +749,8 @@ WORKS_BODY = f"""
         <td>Share of text items the app asks about, across the corpus</td></tr>
     <tr><th>Heading share</th><td>74% to 24%</td>
         <td>Proportion of text tagged as a heading on a real customer deck</td></tr>
-    <tr><th>Automated checks</th><td>347</td>
-        <td>Thirteen groups, exits non-zero, includes adversarial and edge cases</td></tr>
+    <tr><th>Automated checks</th><td>{CHECKS}</td>
+        <td>{GROUPS} groups, exits non-zero, includes adversarial and edge cases</td></tr>
     <tr><th>Cold start</th><td>~215 ms</td>
         <td>Bundled app, from launch to a serving window</td></tr>
   </tbody>
@@ -751,7 +793,8 @@ WORKS_BODY = f"""
 <p>Dependencies are <code>pikepdf</code> (qpdf) for object and stream editing,
    <code>pymupdf</code> (MuPDF) for layout and rendering, and veraPDF plus a trimmed
    Java runtime bundled for verification. A headless CLI already exists and is what the
-   test suite drives, so batch or server-side operation needs no new engine work.</p>
+   test suite drives, so batch or server-side operation needs no new engine work. The
+   source is at <a href="{REPO_URL}">github.com/Chris-Keene/trellis</a>.</p>
 </section>
 
 <section>
@@ -819,24 +862,24 @@ WORKS_BODY = f"""
 """
 
 WORKS = page(
-    title="How PDF Tagger Works",
+    title="How Trellis Works",
     eyebrow="chriskeene.me &middot; engineering handover",
-    h1="How PDF Tagger Works",
-    lede="A working prototype that turns a PDF with no accessibility structure into a "
-         "conformant tagged one, with a person confirming the parts no algorithm can "
-         "settle. This is what it does, how it does it, and what turning it into a "
-         "product would actually involve.",
+    h1="How Trellis Works",
+    lede="Trellis, formerly PDF Tagger, is a working prototype that turns a PDF with no "
+         "accessibility structure into a conformant tagged one, with a person confirming "
+         "the parts no algorithm can settle. This is what it does, how it does it, and "
+         "what turning it into a product would actually involve.",
     facts=[("Status", "Prototype, working end to end"),
            ("Platform", "macOS app; portable engine"),
-           ("Evidence", "31 real decks, 347 checks")],
+           ("Evidence", f"31 real decks, {CHECKS} checks")],
     body=WORKS_BODY,
-    foot=f"PDF Tagger {VERSION} &middot; prototype built in Sandbox, macOS app plus "
-         "portable engine. Measurements come from the project's own test suite and were "
-         "reproduced against real customer-facing decks.")
+    foot=f"Trellis {VERSION}, formerly PDF Tagger &middot; prototype built in Sandbox, "
+         "macOS app plus portable engine. Measurements come from the project's own test "
+         "suite and were reproduced against real customer-facing decks.")
 
 
 if __name__ == "__main__":
-    for name, html in (("installing-pdf-tagger.html", INSTALL),
-                       ("how-pdf-tagger-works.html", WORKS)):
+    for name, html in (("installing-trellis.html", INSTALL),
+                       ("how-trellis-works.html", WORKS)):
         (HERE / name).write_text(html, encoding="utf-8")
         print(f"wrote {name}  ({len(html):,} bytes)")

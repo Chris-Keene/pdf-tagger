@@ -4,7 +4,7 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 SRC="${1:?usage: export_guide.sh <guide.html>}"
-OUT="dist/Installing-PDF-Tagger.pdf"
+OUT="dist/Installing-Trellis.pdf"
 # harden_pdf.py and verify_pdf_a11y.py come from the separate deck-a11y toolkit.
 # Point DECK_A11Y at your checkout of it; without it there is nothing to export with.
 DECK="${DECK_A11Y:-$HOME/Documents/Sandbox/deck-a11y/scripts}"

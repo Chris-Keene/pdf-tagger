@@ -1,4 +1,22 @@
-# Installing PDF Tagger
+# Installing Trellis
+
+**Trellis, formerly PDF Tagger**, is an accessibility tagger for PDFs. The latest
+version is always at <https://github.com/Chris-Keene/trellis/releases>, and there is
+more about it at <https://chriskeene.me/trellis>.
+
+## Upgrading from PDF Tagger
+
+Trellis is the new name for PDF Tagger, from version 1.22.0.
+
+- **It installs as a separate app.** Once Trellis is in Applications, move
+  **PDF Tagger** to the Bin.
+- **Files you tagged with PDF Tagger** open in Trellis with your decisions intact,
+  the same as before.
+- **macOS will stop it once on first launch**, exactly as it did for PDF Tagger,
+  because to macOS it is a new app. The steps below clear it.
+- **The log has moved** to `~/Library/Logs/Trellis.log`.
+
+---
 
 ## What you need
 
@@ -14,8 +32,8 @@ Nothing else needs installing, and it works offline.
 
 ## Installing it (about a minute)
 
-**1. Unzip the file.** Double-click `PDF-Tagger-1.6.1.zip`. You'll get an app
-called **PDF Tagger**.
+**1. Unzip the file.** Double-click `Trellis-1.22.0.zip`. You'll get an app
+called **Trellis**.
 
 **2. Drag it into your Applications folder.** Not essential, but it's where you'll
 expect to find it later.
@@ -31,13 +49,13 @@ anything is wrong with it. See below for how to get past it once.
 
 You only ever do this once.
 
-1. Double-click **PDF Tagger**. A message appears saying macOS can't verify it.
+1. Double-click **Trellis**. A message appears saying macOS can't verify it.
    Click **Done** (or **OK**, or **Cancel** — whichever it offers).
 2. Open **System Settings** (the grey cog in your Dock, or ⌘-Space and type
    "System Settings").
 3. Click **Privacy & Security** in the left-hand list.
 4. Scroll down to the **Security** section. You'll see a line saying
-   *"PDF Tagger was blocked to protect your Mac."*
+   *"Trellis was blocked to protect your Mac."*
 5. Click **Open Anyway** next to it.
 6. Confirm with your Mac password, Touch ID, or Apple Watch.
 7. The app opens. From now on it opens normally, like anything else.
@@ -51,7 +69,7 @@ You only ever do this once.
 Skips all of the above. Open Terminal, paste this, press Return:
 
 ```bash
-xattr -d -r com.apple.quarantine "/Applications/PDF Tagger.app"
+xattr -d -r com.apple.quarantine "/Applications/Trellis.app"
 ```
 
 Then open the app normally. (If you put it somewhere other than Applications,
@@ -62,7 +80,7 @@ change the path to match.)
 ## Using it
 
 1. **Open the app** and drop a PDF onto the window, or click **Choose a PDF**.
-   You can also right-click any PDF and pick **Open With → PDF Tagger**.
+   You can also right-click any PDF and pick **Open With → Trellis**.
 2. **Follow the five steps** along the top. It explains each one as you go.
 3. **Leave "Help tips on"** while you're learning. When the explanations start
    getting in the way, turn them off with the button in the top right.
@@ -92,15 +110,16 @@ the end.
   to rewrite the file and it comes out unprotected. Re-apply the password to the
   copy if it matters.
 - **Anything else.** There's a log at
-  `~/Library/Logs/PDF Tagger.log` — send that on with a description of what you
+  `~/Library/Logs/Trellis.log`; send that on with a description of what you
   were doing.
 
 ---
 
 ## Notes for whoever is handing this out
 
-**What to send:** `dist/PDF-Tagger-1.6.1.zip` (96MB). Zipped with `ditto`, so the
-code signature survives the transfer. Slack and Drive handle that comfortably; email
+**What to send:** `Trellis-1.22.0.zip` (89MB; Finder says 93.6 MB), attached to
+each [release](https://github.com/Chris-Keene/trellis/releases) or built into
+`dist/`. Zipped with `ditto`, so the code signature survives the transfer. Slack and Drive handle that comfortably; email
 probably will not, so use a link.
 
 **Every recipient will hit the Gatekeeper warning**, because the app is ad-hoc
@@ -122,11 +141,11 @@ still on an Intel machine before you send it.
 
 **veraPDF is bundled**, so recipients do get the real conformance verdict without
 installing Java or Homebrew. It is the actual veraPDF CLI plus a `jlink`-trimmed
-OpenJDK runtime (63MB of the download), verified to produce a verdict identical to a
+OpenJDK runtime (63MB once unzipped), verified to produce a verdict identical to a
 system install with no Java anywhere on PATH.
 
-That is what takes the zip from 45MB to 96MB. `./build/make_app.sh --no-verapdf`
-builds the 45MB version, which tags identically but shows "Exported, not verified
+That is what takes the zip from 44MB to 89MB. `./build/make_app.sh --no-verapdf`
+builds the 44MB version, which tags identically but shows "Exported, not verified
 here" instead of a pass or fail.
 
 **Licensing**, since this redistributes other people's code: veraPDF is dual

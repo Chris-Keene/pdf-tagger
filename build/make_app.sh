@@ -1,5 +1,5 @@
 #!/bin/bash
-# Build "PDF Tagger.app" — a self-contained bundle that needs no Python on the
+# Build "Trellis.app": a self-contained bundle that needs no Python on the
 # machine it runs on.  Run from the project root: ./build/make_app.sh
 set -euo pipefail
 cd "$(dirname "$0")/.."
@@ -20,18 +20,20 @@ else
 fi
 
 rm -rf build/dist build/work
-"$VENV/bin/pyinstaller" \
+# Run as a module: the venv's pyinstaller console script has the venv's absolute
+# path baked into its shebang, so it breaks the moment the checkout moves.
+"$VENV/bin/python" -m PyInstaller \
   --noconfirm --clean --windowed \
-  --name "PDF Tagger" \
-  --icon "$ROOT/build/icon/PDFTagger.icns" \
+  --name "Trellis" \
+  --icon "$ROOT/build/icon/Trellis.icns" \
   --add-data "$ROOT/app/ui:app/ui" \
   --hidden-import objc --hidden-import AppKit --hidden-import Foundation \
   --hidden-import WebKit --hidden-import CoreFoundation \
-  --osx-bundle-identifier "me.chriskeene.pdftagger" \
+  --osx-bundle-identifier "me.chriskeene.trellis" \
   --distpath build/dist --workpath build/work --specpath build \
   run.py
 
-APP="build/dist/PDF Tagger.app"
+APP="build/dist/Trellis.app"
 
 # Copied in with ditto rather than --add-data: the JRE has symlinks and executable
 # bits that PyInstaller's data copying does not preserve.
@@ -42,9 +44,9 @@ fi
 # Deliberately NOT LSUIElement: the UI lives in a browser tab, so without a Dock
 # icon a user who closes the tab has no way to stop the server short of Activity
 # Monitor.  A Dock icon gives them right-click - Quit as a reliable escape hatch.
-/usr/libexec/PlistBuddy -c "Set :CFBundleShortVersionString 1.21.0" "$APP/Contents/Info.plist" 2>/dev/null || true
-/usr/libexec/PlistBuddy -c "Add :CFBundleVersion string 1.21.0" "$APP/Contents/Info.plist" 2>/dev/null \
-  || /usr/libexec/PlistBuddy -c "Set :CFBundleVersion 1.21.0" "$APP/Contents/Info.plist" 2>/dev/null || true
+/usr/libexec/PlistBuddy -c "Set :CFBundleShortVersionString 1.22.0" "$APP/Contents/Info.plist" 2>/dev/null || true
+/usr/libexec/PlistBuddy -c "Add :CFBundleVersion string 1.22.0" "$APP/Contents/Info.plist" 2>/dev/null \
+  || /usr/libexec/PlistBuddy -c "Set :CFBundleVersion 1.22.0" "$APP/Contents/Info.plist" 2>/dev/null || true
 
 # Let a PDF be opened with this app (right-click - Open With, or dropped on the
 # Dock icon). Rank Alternate on purpose: hijacking the default PDF handler would
@@ -74,7 +76,7 @@ codesign --force --deep --sign - "$APP" 2>/dev/null || echo "note: ad-hoc signin
 # .app next to the spec, and a third in the project's own dist/ where the shippable
 # zip lives. Three copies of 160MB, and the one in dist/ is the dangerous one because
 # someone could send it instead of the zip.
-rm -rf "build/dist/PDF Tagger" "build/PDF Tagger.app" "$ROOT/dist/PDF Tagger.app"
+rm -rf "build/dist/Trellis" "build/Trellis.app" "$ROOT/dist/Trellis.app"
 
 echo
 echo "Built: $ROOT/$APP"

@@ -1,4 +1,4 @@
-"""Local HTTP server behind the PDF Tagger window.
+"""Local HTTP server behind the Trellis window.
 
 Deliberately stdlib-only: the app ships as a bundle, and every extra dependency
 is more that can break on someone else's Mac.  Single user, single document, so
@@ -49,7 +49,7 @@ NATIVE = None
 # print between binding and serve_forever() leaves the app listening but never
 # accepting — it looks alive and every request hangs.  Everything goes through
 # here instead, and nothing in here is allowed to raise.
-LOGFILE = os.path.join(os.path.expanduser("~/Library/Logs"), "PDF Tagger.log")
+LOGFILE = os.path.join(os.path.expanduser("~/Library/Logs"), "Trellis.log")
 
 
 def log(msg):
@@ -212,7 +212,7 @@ def payload():
 # request handling
 # --------------------------------------------------------------------------- #
 class Handler(BaseHTTPRequestHandler):
-    server_version = "PDFTagger/1.0"
+    server_version = "Trellis/1.0"
 
     def log_message(self, *a):
         pass                                    # keep the console quiet
@@ -305,7 +305,7 @@ class Handler(BaseHTTPRequestHandler):
                 if not data:
                     return self._json({"error": "No file received."}, 400)
                 if STATE["tmpdir"] is None:
-                    STATE["tmpdir"] = tempfile.mkdtemp(prefix="pdftagger-")
+                    STATE["tmpdir"] = tempfile.mkdtemp(prefix="trellis-")
                 safe = re.sub(r"[^\w.\- ]", "_", os.path.basename(name))
                 path = os.path.join(STATE["tmpdir"], safe)
                 with open(path, "wb") as f:
@@ -441,7 +441,7 @@ def _draft_alt_text(model, ids):
             and e.bbox[2] - e.bbox[0] >= 4 and e.bbox[3] - e.bbox[1] >= 4]
     PROGRESS.update(active=True, done=0, total=len(todo),
                     label="Reading the first image")
-    with tempfile.TemporaryDirectory(prefix="pdftagger-alt-") as tmp:
+    with tempfile.TemporaryDirectory(prefix="trellis-alt-") as tmp:
         for pm in model.pages:
             page = doc[pm.number]
             context = " ".join(
@@ -532,7 +532,7 @@ def serve(port=0, open_browser=True, native=False):
         else:
             NATIVE = native_mod
 
-    log(f"PDF Tagger running at {url} ({'native window' if native else 'browser'})")
+    log(f"Trellis running at {url} ({'native window' if native else 'browser'})")
     try:
         if native:
             # Cocoa insists on owning the main thread, so the server moves to a

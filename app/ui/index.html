@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>PDF Tagger</title>
+<title>Trellis</title>
 <style>
 /* Atkinson Hyperlegible Next 2.001, the variable font (wght 200-800), carried in
    the page itself. The server only ever serves this one file and the UI makes no
@@ -77,6 +77,10 @@ header.bar h1{color:var(--ink);margin:0;font-size:1.05rem;letter-spacing:-.01em}
 header.bar .lockup{display:flex;align-items:center;gap:.65rem;min-width:0}
 header.bar .logo{height:26px;width:26px;display:block;flex:none;border-radius:6px}
 header.bar .sep{width:1px;height:20px;background:var(--line);flex:none}
+/* The name alone says nothing about what the app does, so the header says it
+   once in plain words. It is the first thing to go when the bar gets tight. */
+header.bar .tagline{color:var(--muted);font-size:.85rem;white-space:nowrap}
+@media (max-width:1000px){header.bar .tagline{display:none}}
 .filename{color:var(--muted);font-size:.85rem;margin-left:auto;max-width:40ch;
   overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 header.bar .quit{font:inherit;font-size:.82rem;font-weight:600;color:var(--accent-ink);
@@ -497,7 +501,8 @@ header.bar .swtog[aria-checked="true"] .knob{background:#fff;
     <div class="lockup">
       <img class="logo" alt="" width="26" height="26" src="data:image/png;base64,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">
       <span class="sep" aria-hidden="true"></span>
-      <h1>PDF&nbsp;Tagger</h1>
+      <h1>Trellis</h1>
+      <span class="tagline">Accessibility tagger for PDFs</span>
     </div>
     <span class="filename" id="fname"></span>
     <div class="toggles">
@@ -537,9 +542,9 @@ const S = {loaded:false, doc:null, summary:null, issues:[], roleGroups:[], step:
 
 /* localStorage throws outright when a page is loaded from a data: or file: URL,
    and in private windows, so every access is guarded. */
-function store(k, v){ try{ localStorage.setItem("pdftagger."+k, JSON.stringify(v)); }catch(e){} }
+function store(k, v){ try{ localStorage.setItem("trellis."+k, JSON.stringify(v)); }catch(e){} }
 function recall(k, dflt){
-  try{ const v = localStorage.getItem("pdftagger."+k);
+  try{ const v = localStorage.getItem("trellis."+k);
        return v===null ? dflt : JSON.parse(v); }catch(e){ return dflt; }
 }
 
@@ -2361,11 +2366,11 @@ document.getElementById("quit").onclick = async ()=>{
   try{ await api("/api/quit",{method:"POST"}); }catch(e){}
   body.innerHTML = "";
   const p = el("div",{class:"bye"},[
-    el("h2",{text:"PDF Tagger has stopped"}),
+    el("h2",{text:"Trellis has stopped"}),
     el("p",{text:"You can close this tab. Any file you exported is untouched."})]);
   body.appendChild(p);
   const h = p.querySelector("h2"); h.tabIndex=-1; h.focus();
-  document.title = "PDF Tagger — stopped";
+  document.title = "Trellis (stopped)";
 };
 
 /* ---------- boot ---------- */

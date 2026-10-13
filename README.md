@@ -1,4 +1,9 @@
-# PDF Tagger
+# Trellis
+
+**Trellis, an accessibility tagger for PDFs. Formerly PDF Tagger.** It was renamed
+in 1.22.0; files PDF Tagger tagged are still recognised as its own work.
+Releases: <https://github.com/Chris-Keene/trellis/releases>. More:
+<https://chriskeene.me/trellis>.
 
 A Mac app that takes a PDF with **no accessibility structure at all** — the kind
 Google Slides, Keynote and most "print to PDF" routes produce — works out what
@@ -29,12 +34,13 @@ Measured on ten real Google Slides exports (1 to 20 pages): all ten reach
 ## Installing it
 
 For handing out to non-technical people, see **[INSTALL.md](INSTALL.md)**, which
-covers the Gatekeeper first-launch warning step by step. A distributable zip is at
-`dist/PDF-Tagger-1.4.0.zip`.
+covers the Gatekeeper first-launch warning step by step. Every
+[release](https://github.com/Chris-Keene/trellis/releases) carries the zip
+(`Trellis-1.22.0.zip` for this version) and both PDF guides.
 
 ## Using it
 
-Double-click **PDF Tagger.app**. It opens a normal Mac window and walks five steps:
+Double-click **Trellis.app**. It opens a normal Mac window and walks five steps:
 
 1. **Open** — drop a PDF in, or pick one.
 2. **Document** — title and language. Both are required and both get read out.
@@ -46,10 +52,11 @@ Double-click **PDF Tagger.app**. It opens a normal Mac window and walks five ste
 
 Your original file is never modified. The tagged copy is always a new file.
 
-Because it is not signed by a registered developer, the first launch needs
-**right-click → Open** (or System Settings → Privacy & Security → Open Anyway).
+Because it is not signed by a registered developer, macOS blocks the first
+launch. Clear it once in System Settings → Privacy & Security → **Open Anyway**.
+On macOS 15 the old right-click → Open shortcut no longer works for this.
 
-You can also right-click a PDF and **Open With → PDF Tagger**, or drop one on the
+You can also right-click a PDF and **Open With → Trellis**, or drop one on the
 Dock icon. It registers as an *alternate* handler for PDFs on purpose; hijacking
 the default handler would be a rude thing for a tagging tool to do.
 
@@ -153,7 +160,13 @@ it with `&&`.
 ./build/make_app.sh
 ```
 
-Needs `pyinstaller` in the venv. Output lands in `build/dist/`.
+Needs `pyinstaller` in the venv. Output lands in `build/dist/`. The release zip
+is made with `ditto`, which keeps the code signature intact:
+
+```bash
+ditto -c -k --sequesterRsrc --keepParent "build/dist/Trellis.app" dist/Trellis-1.22.0.zip
+./build/export_docs.sh      # the two PDF guides, into dist/ beside it
+```
 
 ## How it works
 
@@ -214,7 +227,8 @@ Copy `tests/corpus.json.example` to `tests/corpus.json` and point it at your own
 | `SHADED_TABLE` | a document with a borderless, shaded table |
 | `TAGGED` | glob patterns for files some other tool already tagged |
 
-`PDFTAG_CORPUS_<KEY>` overrides any of them. `DIR` is worth setting deliberately:
+`TRELLIS_CORPUS_<KEY>` overrides any of them (`PDFTAG_CORPUS_<KEY>`, from
+before the rename, still works). `DIR` is worth setting deliberately:
 the default sweeps a whole Downloads folder, which is a rude thing to do to
 somebody silently.
 
@@ -222,9 +236,9 @@ Two fixtures work the same way. `tests/slides-6page.pdf` and
 `tests/slides-1page.pdf` are real exports if you drop them in; without them the
 suite builds a deck of the same shape and carries on.
 
-Exits non-zero on failure. Seven groups: the real Slides corpus, round-trip,
-files already tagged by other tools, edge cases, fonts, nested text, error
-messages, and the HTTP API.
+Exits non-zero on failure. A full run is 30 groups and 435 checks without the
+corpus (1.22.0), from round-trip, edge cases, fonts and nested text through to
+provenance, error messages and the HTTP API, plus 15 more with `--native-ui`.
 
 Two invariants are worth calling out, because they are what the suite is really
 built around:
@@ -334,8 +348,9 @@ and comes back marked as checked. Before this, the app reverted the user's chang
 on re-upload and asked them to review everything a second time, which made
 confirming a proposal pointless.
 
-Provenance decides how far the tags are trusted. Ours (identified by
-`xmp:CreatorTool`) means a human already worked through the document, so they are
+Provenance decides how far the tags are trusted. Ours (identified by the
+`xmp:CreatorTool` value alone: `Trellis`, or `PDF Tagger` for files tagged before
+the rename) means a human already worked through the document, so they are
 treated as settled. Another tool's are adopted too — better evidence than a guess
 from font sizes — but nobody has vouched for them, so they are used without being
 signed off, and the user is told once at the document level rather than being
@@ -407,9 +422,9 @@ Two things worth recording:
     `server_name`, which nothing reads. In the frozen bundle that reverse DNS
     lookup blocks for **35 seconds**. `Server.server_bind` skips it: startup went
     from 35,238ms to 559ms.
-- **The header logo is embedded as a WebP data URI**, because the UI is a single
-  self-contained file with no network access. It is downscaled to the 22px it
-  displays at and embedded at 3x for high-DPI, 7.2KB.
+- **The header logo is embedded as a PNG data URI**, because the UI is a single
+  self-contained file with no network access. It is 128px square, shown at 26px,
+  which leaves headroom for high-DPI: 4.9KB, 6.6KB as base64.
 - **The font is embedded the same way**: Atkinson Hyperlegible Next as one variable
   woff2 (weights 200 to 800), 64KB as base64. Up to 1.20.0 the UI named Outfit and
   relied on it being installed, so it only looked right on the machine that built

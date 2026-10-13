@@ -25,7 +25,7 @@ from AppKit import (NSApp, NSApplication, NSApplicationActivationPolicyRegular,
 from Foundation import NSURL, NSURLRequest, NSOperationQueue
 from WebKit import WKWebView, WKWebViewConfiguration
 
-APP_NAME = "PDF Tagger"
+APP_NAME = "Trellis"
 _state = {"window": None, "webview": None, "delegate": None}
 
 

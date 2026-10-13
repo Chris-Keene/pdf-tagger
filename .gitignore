@@ -22,4 +22,4 @@ tests/slides-1page.pdf
 
 # PyInstaller regenerates this from make_app.sh's arguments on every build, and
 # writes absolute paths back into it. make_app.sh is the source of truth.
-build/PDF Tagger.spec
+build/*.spec

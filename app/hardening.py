@@ -24,7 +24,7 @@ XMP = """<?xpacket begin="﻿" id="W5M0MpCehiHzreSzNTczkc9d"?>
    <pdfuaid:part>1</pdfuaid:part>
    <dc:title><rdf:Alt><rdf:li xml:lang="x-default">{title}</rdf:li></rdf:Alt></dc:title>
    <dc:language><rdf:Bag><rdf:li>{lang}</rdf:li></rdf:Bag></dc:language>
-   <xmp:CreatorTool>PDF Tagger</xmp:CreatorTool>
+   <xmp:CreatorTool>Trellis</xmp:CreatorTool>
   </rdf:Description>
  </rdf:RDF>
 </x:xmpmeta>
